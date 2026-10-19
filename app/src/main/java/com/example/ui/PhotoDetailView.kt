@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -201,7 +202,7 @@ fun PhotoDetailView(
                             .background(VaultSurfaceElevated.copy(alpha = 0.85f))
                             .border(1.dp, VaultBorderSubtle, CircleShape)
                     ) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = strings.back, tint = VaultTextPrimary)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = strings.back, tint = VaultTextPrimary)
                     }
                     Spacer(modifier = Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1.0f)) {

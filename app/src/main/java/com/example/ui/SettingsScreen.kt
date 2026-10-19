@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -125,7 +126,7 @@ fun SettingsScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            imageVector = Icons.Default.ArrowBack,
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = strings.back,
                             tint = VaultTextPrimary
                         )
@@ -167,10 +168,8 @@ fun SettingsScreen(
                         label = strings.photosCount,
                         accentColor = VaultPrimaryLight
                     )
-                    Divider(
-                        modifier = Modifier
-                            .height(36.dp)
-                            .width(1.dp),
+                    VerticalDivider(
+                        modifier = Modifier.height(36.dp),
                         color = VaultBorderSubtle
                     )
                     StatItem(
@@ -179,10 +178,8 @@ fun SettingsScreen(
                         label = strings.videoFilesCount,
                         accentColor = VaultAccentCyan
                     )
-                    Divider(
-                        modifier = Modifier
-                            .height(36.dp)
-                            .width(1.dp),
+                    VerticalDivider(
+                        modifier = Modifier.height(36.dp),
                         color = VaultBorderSubtle
                     )
                     StatItem(
@@ -307,7 +304,7 @@ fun SettingsScreen(
                         )
                     }
 
-                    Divider(color = VaultBorderSubtle)
+                    HorizontalDivider(color = VaultBorderSubtle)
 
                     // Loop Video Switch
                     Row(
@@ -338,7 +335,7 @@ fun SettingsScreen(
                         )
                     }
 
-                    Divider(color = VaultBorderSubtle)
+                    HorizontalDivider(color = VaultBorderSubtle)
 
                     // Default Playback Speed Selector
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -462,7 +459,7 @@ fun SettingsScreen(
                         }
                     }
 
-                    Divider(color = VaultBorderSubtle)
+                    HorizontalDivider(color = VaultBorderSubtle)
 
                     // Show Media Badges Switch
                     Row(
@@ -493,7 +490,7 @@ fun SettingsScreen(
                         )
                     }
 
-                    Divider(color = VaultBorderSubtle)
+                    HorizontalDivider(color = VaultBorderSubtle)
 
                     // Sort Order Selector
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -629,7 +626,7 @@ fun SettingsScreen(
                         }
                     }
 
-                    Divider(color = VaultBorderSubtle)
+                    HorizontalDivider(color = VaultBorderSubtle)
 
                     // Video Folder
                     Column {
@@ -698,7 +695,7 @@ fun SettingsScreen(
                         }
                     }
 
-                    Divider(color = VaultBorderSubtle)
+                    HorizontalDivider(color = VaultBorderSubtle)
 
                     // THUMBNAIL CACHE CLEANER (NEW)
                     Row(
@@ -733,7 +730,7 @@ fun SettingsScreen(
                         }
                     }
 
-                    Divider(color = VaultBorderSubtle)
+                    HorizontalDivider(color = VaultBorderSubtle)
 
                     // BATCH PROCESSING QUEUE SIZE
                     Column {
@@ -918,7 +915,7 @@ fun SettingsScreen(
                         )
                     }
 
-                    Divider(color = VaultBorderSubtle)
+                    HorizontalDivider(color = VaultBorderSubtle)
 
                     // Play Intro on Launch Switch
                     Row(
@@ -949,19 +946,25 @@ fun SettingsScreen(
                         )
                     }
 
-                    Divider(color = VaultBorderSubtle)
+                    HorizontalDivider(color = VaultBorderSubtle)
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = strings.appVersion,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp,
                                 color = VaultTextPrimary
+                            )
+                            Text(
+                                text = strings.introLicenseBadge,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = VaultAccentCyan
                             )
                             Text(
                                 text = strings.appVersionDesc,

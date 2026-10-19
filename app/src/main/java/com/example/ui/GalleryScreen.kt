@@ -27,6 +27,7 @@ import com.example.data.MediaSortOrder
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -318,7 +319,7 @@ fun GalleryScreen(
                                         },
                                         modifier = Modifier.size(32.dp)
                                     ) {
-                                        Icon(Icons.Default.ArrowBack, contentDescription = strings.back, tint = VaultTextPrimary, modifier = Modifier.size(18.dp))
+                                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = strings.back, tint = VaultTextPrimary, modifier = Modifier.size(18.dp))
                                     }
                                     OutlinedTextField(
                                         value = searchQuery,
@@ -729,9 +730,9 @@ fun GalleryScreen(
                     // TABS CONTENT
                     when (activeTab) {
                         0 -> {
-                            // TAB 0: VIDEO FOLDER BROWSER (WITH THE 2 REQUESTED BACKUP/RESTORE BUTTONS)
+                            // TAB 0: VIDEO FOLDER BROWSER (COMPACT & STREAMLINED)
                             Column(modifier = Modifier.fillMaxSize()) {
-                                // FOLDER PATH & BROWSE MODE SWITCHER BANNER
+                                // COMPACT MODE SWITCHER & SOURCE BAR
                                 Surface(
                                     color = VaultSurface,
                                     shape = RoundedCornerShape(14.dp),
@@ -740,19 +741,22 @@ fun GalleryScreen(
                                         .fillMaxWidth()
                                         .padding(horizontal = 12.dp, vertical = 6.dp)
                                 ) {
-                                    Column(modifier = Modifier.padding(12.dp)) {
-                                        // Row 0: Browse Mode Switcher (Standard Gallery vs Specific Folder)
+                                    Column(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        // Row 0: Clean Segmented Mode Switcher (Gallery vs Folder)
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .clip(RoundedCornerShape(11.dp))
+                                                .clip(RoundedCornerShape(10.dp))
                                                 .background(VaultBackground)
-                                                .border(1.dp, VaultBorderSubtle, RoundedCornerShape(11.dp))
+                                                .border(1.dp, VaultBorderSubtle, RoundedCornerShape(10.dp))
                                                 .padding(3.dp),
                                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            // Option 1: Standard Gallery (Default on first launch)
+                                            // Option 1: Standard Gallery
                                             Box(
                                                 modifier = Modifier
                                                     .weight(1f)
@@ -778,7 +782,7 @@ fun GalleryScreen(
                                                         imageVector = Icons.Default.VideoLibrary,
                                                         contentDescription = null,
                                                         tint = if (isGalleryBrowseMode) VaultPrimaryLight else VaultTextSecondary,
-                                                        modifier = Modifier.size(14.dp)
+                                                        modifier = Modifier.size(15.dp)
                                                     )
                                                     Text(
                                                         text = strings.browseModeGallery,
@@ -817,7 +821,7 @@ fun GalleryScreen(
                                                         imageVector = Icons.Default.Folder,
                                                         contentDescription = null,
                                                         tint = if (!isGalleryBrowseMode) VaultAccentCyan else VaultTextSecondary,
-                                                        modifier = Modifier.size(14.dp)
+                                                        modifier = Modifier.size(15.dp)
                                                     )
                                                     Text(
                                                         text = strings.browseModeFolder,
@@ -831,9 +835,7 @@ fun GalleryScreen(
                                             }
                                         }
 
-                                        Spacer(modifier = Modifier.height(8.dp))
-
-                                        // Row 1: Active Source Info + Quick Toggle + Rescan + Pick Folder
+                                        // Row 1: Source Info + Folder Selector / Refresh + Compact Backup Buttons
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
                                             verticalAlignment = Alignment.CenterVertically,
@@ -841,64 +843,57 @@ fun GalleryScreen(
                                         ) {
                                             Row(
                                                 verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
                                                 modifier = Modifier.weight(1f)
                                             ) {
                                                 Icon(
-                                                    imageVector = if (isGalleryBrowseMode) Icons.Default.VideoLibrary else Icons.Default.Folder,
+                                                    imageVector = if (isGalleryBrowseMode) Icons.Default.VideoLibrary else Icons.Default.FolderOpen,
                                                     contentDescription = null,
                                                     tint = if (isGalleryBrowseMode) VaultPrimaryLight else VaultAccentCyan,
-                                                    modifier = Modifier.size(22.dp)
+                                                    modifier = Modifier.size(18.dp)
                                                 )
-                                                Column(modifier = Modifier.weight(1f)) {
-                                                    Text(
-                                                        text = if (isGalleryBrowseMode) strings.browseModeGallery else strings.videoDirLabel,
-                                                        fontSize = 11.sp,
-                                                        color = VaultTextSecondary,
-                                                        fontWeight = FontWeight.Medium,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis
-                                                    )
-                                                    Text(
-                                                        text = if (isGalleryBrowseMode) strings.galleryModeSubtitle else videoDirectory,
-                                                        fontSize = 12.sp,
-                                                        color = VaultTextPrimary,
-                                                        fontWeight = FontWeight.Bold,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis
-                                                    )
-                                                }
+                                                Text(
+                                                    text = if (isGalleryBrowseMode) strings.galleryModeSubtitle else File(videoDirectory).name.ifEmpty { videoDirectory },
+                                                    fontSize = 12.sp,
+                                                    color = VaultTextPrimary,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
                                             }
 
                                             Row(
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                                             ) {
-                                                // 1-Tap Switch Mode Button (Gallery <-> Folder)
-                                                IconButton(
-                                                    onClick = { viewModel.toggleGalleryBrowseMode() },
-                                                    modifier = Modifier
-                                                        .size(32.dp)
-                                                        .clip(RoundedCornerShape(8.dp))
-                                                        .background(VaultSurfaceElevated)
-                                                        .border(1.dp, VaultBorderSubtle, RoundedCornerShape(8.dp))
-                                                        .testTag("toggle_browse_mode_btn")
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.SwapHoriz,
-                                                        contentDescription = strings.switchBrowseModeBtn,
-                                                        tint = VaultAccentCyan,
-                                                        modifier = Modifier.size(18.dp)
-                                                    )
+                                                if (!isGalleryBrowseMode) {
+                                                    Button(
+                                                        onClick = { showFolderPicker = true },
+                                                        colors = ButtonDefaults.buttonColors(
+                                                            containerColor = VaultSurfaceElevated,
+                                                            contentColor = VaultAccentCyan
+                                                        ),
+                                                        border = BorderStroke(1.dp, VaultAccentCyan.copy(alpha = 0.4f)),
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                                        modifier = Modifier.height(30.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = strings.btnFolder,
+                                                            fontSize = 10.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            maxLines = 1
+                                                        )
+                                                    }
                                                 }
 
                                                 IconButton(
                                                     onClick = { viewModel.rescanVideoFolder(runDuplicateScan = false) },
-                                                    modifier = Modifier.size(32.dp)
+                                                    modifier = Modifier.size(30.dp)
                                                 ) {
                                                     if (isVideoScanning || isDetectingDuplicates) {
                                                         CircularProgressIndicator(
-                                                            modifier = Modifier.size(16.dp),
+                                                            modifier = Modifier.size(14.dp),
                                                             color = VaultAccentAmber,
                                                             strokeWidth = 2.dp
                                                         )
@@ -907,184 +902,94 @@ fun GalleryScreen(
                                                             imageVector = Icons.Default.Refresh,
                                                             contentDescription = strings.reset,
                                                             tint = VaultPrimaryLight,
-                                                            modifier = Modifier.size(18.dp)
+                                                            modifier = Modifier.size(16.dp)
                                                         )
                                                     }
                                                 }
 
-                                                Button(
-                                                    onClick = { showFolderPicker = true },
-                                                    colors = ButtonDefaults.buttonColors(
-                                                        containerColor = VaultSurfaceElevated,
-                                                        contentColor = VaultPrimaryLight
-                                                    ),
-                                                    border = BorderStroke(1.dp, VaultPrimary.copy(alpha = 0.4f)),
-                                                    shape = RoundedCornerShape(8.dp),
-                                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                                    modifier = Modifier.height(32.dp)
+                                                // Backup Button (Compact)
+                                                IconButton(
+                                                    onClick = {
+                                                        val folderName = File(videoDirectory).name.ifEmpty { "folder" }
+                                                        val defaultFileName = "${folderName}_backup.vault"
+                                                        saveArchiveLauncher.launch(defaultFileName)
+                                                    },
+                                                    modifier = Modifier
+                                                        .size(30.dp)
+                                                        .clip(RoundedCornerShape(8.dp))
+                                                        .background(VaultPrimary.copy(alpha = 0.15f))
+                                                        .border(1.dp, VaultPrimary.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                                        .testTag("save_to_drive_button")
                                                 ) {
-                                                    Text(
-                                                        text = strings.btnFolder,
-                                                        fontSize = 11.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        maxLines = 1
+                                                    Icon(
+                                                        imageVector = Icons.Default.CloudUpload,
+                                                        contentDescription = strings.save,
+                                                        tint = VaultPrimaryLight,
+                                                        modifier = Modifier.size(15.dp)
+                                                    )
+                                                }
+
+                                                // Restore Button (Compact)
+                                                IconButton(
+                                                    onClick = {
+                                                        openArchiveLauncher.launch(arrayOf("*/*"))
+                                                    },
+                                                    modifier = Modifier
+                                                        .size(30.dp)
+                                                        .clip(RoundedCornerShape(8.dp))
+                                                        .background(VaultAccentCyan.copy(alpha = 0.12f))
+                                                        .border(1.dp, VaultAccentCyan.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
+                                                        .testTag("load_from_drive_button")
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.CloudDownload,
+                                                        contentDescription = strings.btnLoadBackup,
+                                                        tint = VaultAccentCyan,
+                                                        modifier = Modifier.size(15.dp)
                                                     )
                                                 }
                                             }
                                         }
+                                    }
+                                }
 
-                                        Spacer(modifier = Modifier.height(8.dp))
-
-                                        // Permanent Scan Timer & Duplicate Status Strip on Tab 0
-                                        val prog = detectionProgress
-                                        val isBusyScanning = isDetectingDuplicates
-                                        Surface(
-                                            color = if (isBusyScanning) VaultAccentAmber.copy(alpha = 0.14f) else VaultSurfaceElevated,
-                                            shape = RoundedCornerShape(8.dp),
-                                            border = BorderStroke(
-                                                1.dp,
-                                                if (isBusyScanning) VaultAccentAmber.copy(alpha = 0.6f) else VaultBorderSubtle
-                                            ),
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clickable {
-                                                    if (!isBusyScanning && lastScanVerdict == null) {
-                                                        viewModel.runDuplicateDetection()
-                                                    } else {
-                                                        activeTab = 2
-                                                    }
-                                                }
-                                        ) {
-                                            Column(
-                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                                verticalArrangement = Arrangement.spacedBy(4.dp)
-                                            ) {
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    val remSec = prog?.remainingSeconds?.coerceAtLeast(1) ?: 1
-                                                    val elapsedNow = String.format(
-                                                        java.util.Locale.US,
-                                                        "%.1f",
-                                                        (prog?.elapsedMs ?: 100L) / 1000.0
-                                                    )
-                                                    Text(
-                                                        text = when {
-                                                            isBusyScanning -> "⏱ Час: ${elapsedNow}с • До вердикту: ~${remSec}с"
-                                                            lastScanVerdict == null -> strings.startupFastModeReady
-                                                            else -> "⏱ Час перевірки: ${lastScanDurationSec}с • Дублікатів: ${duplicateGroups.size}"
-                                                        },
-                                                        fontSize = 11.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        fontFamily = FontFamily.Monospace,
-                                                        color = if (isBusyScanning) VaultAccentAmber else VaultAccentCyan,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis,
-                                                        modifier = Modifier.weight(1f)
-                                                    )
-                                                    Spacer(modifier = Modifier.width(6.dp))
-                                                    Text(
-                                                        text = when {
-                                                            isBusyScanning -> "${((prog?.percentage ?: 0.15f) * 100).toInt()}%"
-                                                            lastScanVerdict == null -> strings.btnScanDuplicates
-                                                            else -> "Деталі →"
-                                                        },
-                                                        fontSize = 10.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = VaultPrimaryLight,
-                                                        maxLines = 1
-                                                    )
-                                                }
-                                                if (isBusyScanning) {
-                                                    val pct = (prog?.percentage ?: 0.15f).coerceIn(0.05f, 1f)
-                                                    LinearProgressIndicator(
-                                                        progress = { pct },
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .height(4.dp)
-                                                            .clip(RoundedCornerShape(2.dp)),
-                                                        color = VaultAccentAmber,
-                                                        trackColor = VaultSurfaceHighlight
-                                                    )
-                                                }
-                                            }
-                                        }
-
-                                        Spacer(modifier = Modifier.height(10.dp))
-
-                                        // Row 2: Save to Drive / Storage & Restore from Drive / Storage
+                                // Background Scan Progress (Slim, only when detection is running)
+                                if (isDetectingDuplicates) {
+                                    val prog = detectionProgress
+                                    val pct = (prog?.percentage ?: 0.15f).coerceIn(0.05f, 1f)
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 14.dp, vertical = 2.dp)
+                                    ) {
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            // BUTTON 1: SAVE (PACK ENCRYPTED)
-                                            Button(
-                                                onClick = {
-                                                    val folderName = File(videoDirectory).name.ifEmpty { "folder" }
-                                                    val defaultFileName = "${folderName}_backup.vault"
-                                                    saveArchiveLauncher.launch(defaultFileName)
-                                                },
-                                                colors = ButtonDefaults.buttonColors(
-                                                    containerColor = VaultPrimary,
-                                                    contentColor = VaultOnPrimary
-                                                ),
-                                                shape = RoundedCornerShape(10.dp),
-                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .height(38.dp)
-                                                    .testTag("save_to_drive_button")
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.CloudUpload,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Text(
-                                                    text = strings.save,
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                            }
-
-                                            // BUTTON 2: LOAD (RESTORE ENCRYPTED)
-                                            Button(
-                                                onClick = {
-                                                    openArchiveLauncher.launch(arrayOf("*/*"))
-                                                },
-                                                colors = ButtonDefaults.buttonColors(
-                                                    containerColor = VaultSurfaceElevated,
-                                                    contentColor = VaultAccentCyan
-                                                ),
-                                                border = BorderStroke(1.dp, VaultAccentCyan.copy(alpha = 0.4f)),
-                                                shape = RoundedCornerShape(10.dp),
-                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .height(38.dp)
-                                                    .testTag("load_from_drive_button")
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.CloudDownload,
-                                                    contentDescription = null,
-                                                    tint = VaultAccentCyan,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Text(
-                                                    text = strings.btnLoadBackup,
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                            }
+                                            Text(
+                                                text = "⚡ Перевірка дублікатів у фоні...",
+                                                fontSize = 10.sp,
+                                                color = VaultAccentAmber,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                            Text(
+                                                text = "${(pct * 100).toInt()}%",
+                                                fontSize = 10.sp,
+                                                color = VaultAccentAmber,
+                                                fontWeight = FontWeight.Bold
+                                            )
                                         }
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        LinearProgressIndicator(
+                                            progress = { pct },
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(3.dp)
+                                                .clip(RoundedCornerShape(1.5.dp)),
+                                            color = VaultAccentAmber,
+                                            trackColor = VaultSurfaceHighlight
+                                        )
                                     }
                                 }
 

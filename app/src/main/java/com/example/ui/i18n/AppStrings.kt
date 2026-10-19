@@ -29,6 +29,10 @@ interface AppStrings {
     val introSkipDesc: String
     val introTapToSkip: String
     val introTagline: String
+    val introAppTitle: String
+    val introAppDescription: String
+    val introLicenseBadge: String
+    val introLicenseDetails: String
 
     // Tabs
     val tabVideos: String
@@ -277,8 +281,12 @@ object EnglishStrings : AppStrings {
 
     override val introSkip = "Skip"
     override val introSkipDesc = "Skip intro"
-    override val introTapToSkip = "Tap screen to skip"
-    override val introTagline = "INTERACTIVE MEDIA & STUDIOS"
+    override val introTapToSkip = "Tap anywhere to continue"
+    override val introTagline = "Private Media Gallery & Video Vault"
+    override val introAppTitle = "gal"
+    override val introAppDescription = "Fast, lightweight media player & offline vault without ads or tracking"
+    override val introLicenseBadge = "GNU General Public License v3"
+    override val introLicenseDetails = "Free & Open Source Software under GNU GPLv3"
 
     override val tabVideos = "Videos"
     override val tabPhotos = "Photos"
@@ -338,9 +346,9 @@ object EnglishStrings : AppStrings {
     override val totalSize = "Total size"
     override val videoFilesCount = "Video files"
     override val photosCount = "Photos"
-    override val sectionRoToy = "roTOY Company"
-    override val btnPlayRoToyIntro = "Play roTOY intro"
-    override val roToySectionDesc = "Signature startup animation and cinematic logo"
+    override val sectionRoToy = "About & License"
+    override val btnPlayRoToyIntro = "Show Intro"
+    override val roToySectionDesc = "Program title, purpose and GNU GPL v3 license"
     override val vaultSecurityNotice = "Files in vault are hidden from standard gallery apps and third-party media scanners."
     override val hidePhotos = "Hide photos"
     override val allFilesAccessBannerTitle = "Allow full access to storage"
@@ -486,9 +494,9 @@ object EnglishStrings : AppStrings {
     override val aboutSection = "About Vault"
     override val appVersion = "Version 2.4.0 Pro"
     override val appVersionDesc = "Private offline encrypted vault with hardware-grade zero tracking"
-    override val easterEggIntroBtn = "Play Retro Intro Animation"
-    override val playIntroOnLaunch = "Play intro animation on start"
-    override val playIntroOnLaunchDesc = "Display roTOY animation on cold start"
+    override val easterEggIntroBtn = "Show Intro"
+    override val playIntroOnLaunch = "Play intro on start"
+    override val playIntroOnLaunchDesc = "Display intro screen on cold start"
 
     override val browseModeGallery = "Standard Gallery"
     override val browseModeFolder = "Specific Folder"
@@ -516,9 +524,13 @@ object UkrainianStrings : AppStrings {
     override val loading = "Завантаження..."
 
     override val introSkip = "Пропустити"
-    override val introSkipDesc = "Пропустити інтро"
-    override val introTapToSkip = "Торкніться екрана, щоб пропустити"
-    override val introTagline = "INTERACTIVE MEDIA & STUDIOS"
+    override val introSkipDesc = "Пропустити заставку"
+    override val introTapToSkip = "Торкніться екрана, щоб перейти"
+    override val introTagline = "Приватна галерея та відеоплеєр"
+    override val introAppTitle = "gal"
+    override val introAppDescription = "Швидкий та приватний перегляд відео й фото без реклами та стеження"
+    override val introLicenseBadge = "GNU General Public License v3"
+    override val introLicenseDetails = "Вільне програмне забезпечення під ліцензією GNU GPLv3"
 
     override val tabVideos = "Відео"
     override val tabPhotos = "Фото"
@@ -578,9 +590,9 @@ object UkrainianStrings : AppStrings {
     override val totalSize = "Загальний обсяг"
     override val videoFilesCount = "Відеофайлів"
     override val photosCount = "Фотографій"
-    override val sectionRoToy = "Компанія roTOY"
-    override val btnPlayRoToyIntro = "Переглянути інтро roTOY"
-    override val roToySectionDesc = "Фірмова анімація запуску та кінематографічний логотип"
+    override val sectionRoToy = "Про програму"
+    override val btnPlayRoToyIntro = "Переглянути заставку"
+    override val roToySectionDesc = "Назва програми, призначення та ліцензія GNU GPL v3"
     override val vaultSecurityNotice = "Файли у сховищі захищені від сканування стандартними галереями та сторонніми додатками."
     override val hidePhotos = "Приховати фото"
     override val allFilesAccessBannerTitle = "Дозволити повний доступ до сховища"
@@ -726,9 +738,9 @@ object UkrainianStrings : AppStrings {
     override val aboutSection = "Про сховище"
     override val appVersion = "Версія 2.4.0 Pro"
     override val appVersionDesc = "Повністю автономне зашифроване сховище без збору даних"
-    override val easterEggIntroBtn = "Відтворити ретро-заставку"
-    override val playIntroOnLaunch = "Анімація інтро при запуску"
-    override val playIntroOnLaunchDesc = "Показувати заставку roTOY при холодному старті додатку"
+    override val easterEggIntroBtn = "Переглянути заставку"
+    override val playIntroOnLaunch = "Заставка при запуску"
+    override val playIntroOnLaunchDesc = "Показувати вступну заставку при запуску додатку"
 
     override val browseModeGallery = "Звичайна галерея"
     override val browseModeFolder = "Певна папка"
@@ -756,9 +768,13 @@ object RussianStrings : AppStrings {
     override val loading = "Загрузка..."
 
     override val introSkip = "Пропустить"
-    override val introSkipDesc = "Пропустить интро"
-    override val introTapToSkip = "Нажмите на экран, чтобы пропустить"
-    override val introTagline = "INTERACTIVE MEDIA & STUDIOS"
+    override val introSkipDesc = "Пропустить заставку"
+    override val introTapToSkip = "Нажмите на экран, чтобы перейти"
+    override val introTagline = "Приватная галерея и видеоплеер"
+    override val introAppTitle = "gal"
+    override val introAppDescription = "Быстрый и приватный просмотр видео и фото без рекламы и слежки"
+    override val introLicenseBadge = "GNU General Public License v3"
+    override val introLicenseDetails = "Свободное программное обеспечение под лицензией GNU GPLv3"
 
     override val tabVideos = "Видео"
     override val tabPhotos = "Фото"
@@ -818,9 +834,9 @@ object RussianStrings : AppStrings {
     override val totalSize = "Общий объем"
     override val videoFilesCount = "Видеофайлов"
     override val photosCount = "Фотографий"
-    override val sectionRoToy = "Компания roTOY"
-    override val btnPlayRoToyIntro = "Посмотреть интро roTOY"
-    override val roToySectionDesc = "Фирменная анимация запуска и кинематографический логотип"
+    override val sectionRoToy = "О программе"
+    override val btnPlayRoToyIntro = "Посмотреть заставку"
+    override val roToySectionDesc = "Название программы, назначение и лицензия GNU GPL v3"
     override val vaultSecurityNotice = "Файлы в хранилище защищены от сканирования стандартными галереями и сторонними приложениями."
     override val hidePhotos = "Скрыть фото"
     override val allFilesAccessBannerTitle = "Разрешить полный доступ к хранилищу"
@@ -966,9 +982,9 @@ object RussianStrings : AppStrings {
     override val aboutSection = "О хранилище"
     override val appVersion = "Версия 2.4.0 Pro"
     override val appVersionDesc = "Полностью автономное зашифрованное хранилище без сбора данных"
-    override val easterEggIntroBtn = "Воспроизвести ретро-заставку"
-    override val playIntroOnLaunch = "Анимация интро при запуске"
-    override val playIntroOnLaunchDesc = "Показывать заставку roTOY при холодном старте приложения"
+    override val easterEggIntroBtn = "Посмотреть заставку"
+    override val playIntroOnLaunch = "Заставка при запуске"
+    override val playIntroOnLaunchDesc = "Показывать вступительную заставку при запуске приложения"
 
     override val browseModeGallery = "Обычная галерея"
     override val browseModeFolder = "Определенная папка"
