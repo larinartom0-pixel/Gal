@@ -1,0 +1,6 @@
+{
+  "name": "gal",
+  "description": "Приватна галерея для надійного приховування фото та відео з можливістю швидкісного відтворення.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
