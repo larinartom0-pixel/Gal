@@ -39,6 +39,7 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.example.data.HiddenMedia
@@ -116,8 +117,10 @@ fun VideoPlayerView(
             repeatMode = if (loopVideo) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
             if (isReverse) {
                 volume = 0f
+                setSeekParameters(SeekParameters(150_000L, 150_000L))
             } else {
                 volume = 1f
+                setSeekParameters(SeekParameters.DEFAULT)
                 try {
                     playbackParameters = PlaybackParameters(speed.coerceIn(0.1f, 4.0f))
                 } catch (_: Exception) {
@@ -186,6 +189,7 @@ fun VideoPlayerView(
     LaunchedEffect(speed, exoPlayer) {
         exoPlayer?.let { player ->
             if (speed > 0f) {
+                player.setSeekParameters(SeekParameters.DEFAULT)
                 player.volume = 1f
                 try {
                     player.playbackParameters = PlaybackParameters(speed.coerceIn(0.1f, 4.0f))
@@ -196,7 +200,8 @@ fun VideoPlayerView(
                     player.play()
                 }
             } else {
-                // In reverse mode, pause ExoPlayer's forward audio and decoding loop
+                // In reverse mode, optimize seek parameters to reduce decoder workload
+                player.setSeekParameters(SeekParameters(150_000L, 150_000L))
                 player.pause()
                 player.volume = 0f
             }
@@ -224,14 +229,15 @@ fun VideoPlayerView(
             val player = exoPlayer ?: return@LaunchedEffect
             player.pause()
             player.volume = 0f
+            player.setSeekParameters(SeekParameters(150_000L, 150_000L))
 
             // If at beginning or close to 0, auto jump to the end of the video to play backwards
             var currentReversePos = player.currentPosition
-            if (currentReversePos <= 100L && duration > 0L) {
+            if (currentReversePos <= 150L && duration > 0L) {
                 currentReversePos = duration
                 player.seekTo(duration)
                 currentPos = duration
-                withTimeoutOrNull(250L) {
+                withTimeoutOrNull(300L) {
                     seekSignal.receive()
                 }
             }
@@ -240,12 +246,15 @@ fun VideoPlayerView(
 
             // Pacing delay: allows each decoded frame to be rendered and viewed on screen
             // without being cancelled or dropped by rapid subsequent seeks.
+            // 90ms at 1.0x provides a steady, fluid ~6-8 fps reverse playback that mobile decoders can easily sustain.
             val pacingDelayMs = when {
-                absSpeed <= 0.5f -> 80L
-                absSpeed <= 1.0f -> 60L
-                absSpeed <= 2.0f -> 50L
-                else -> 40L
+                absSpeed <= 0.5f -> 120L
+                absSpeed <= 1.0f -> 90L
+                absSpeed <= 2.0f -> 70L
+                else -> 50L
             }
+
+            var lastCycleDurationMs = pacingDelayMs + 50L
 
             while (isActive && isPlaybackActive && speed < 0f) {
                 if (isUserSeeking) {
@@ -259,12 +268,9 @@ fun VideoPlayerView(
                     currentReversePos = player.currentPosition
                 }
 
-                // Drain any old seek signal before initiating new seek
-                while (seekSignal.tryReceive().isSuccess) { /* drain */ }
-
-                // Dynamic step based on cycle duration (pacing + decode time) to maintain real-time speed
-                val nominalCycleMs = pacingDelayMs + 40L
-                val stepMs = (nominalCycleMs * absSpeed).toLong().coerceAtLeast(35L)
+                // Calculate next target position based on actual time elapsed in previous cycle
+                // to maintain an exact real-time playback speed
+                val stepMs = (lastCycleDurationMs * absSpeed).toLong().coerceIn(60L, 600L)
                 val nextPos = currentReversePos - stepMs
 
                 if (nextPos <= 0L) {
@@ -272,10 +278,11 @@ fun VideoPlayerView(
                         currentReversePos = duration
                         player.seekTo(duration)
                         currentPos = duration
-                        withTimeoutOrNull(250L) {
+                        withTimeoutOrNull(300L) {
                             seekSignal.receive()
                         }
                         delay(pacingDelayMs)
+                        lastCycleDurationMs = pacingDelayMs + 50L
                         continue
                     } else {
                         player.seekTo(0L)
@@ -284,18 +291,25 @@ fun VideoPlayerView(
                         break
                     }
                 } else {
+                    val cycleStart = System.currentTimeMillis()
+
+                    // Drain any stale seek signals
+                    while (seekSignal.tryReceive().isSuccess) { /* drain */ }
+
                     currentReversePos = nextPos
                     player.seekTo(nextPos)
                     currentPos = nextPos
 
                     // Wait for ExoPlayer to signal STATE_READY (frame rendered)
-                    // with a tight timeout so it never blocks or hangs
-                    withTimeoutOrNull(100L) {
+                    // with a generous timeout (280ms) so the hardware decoder is NEVER aborted
+                    withTimeoutOrNull(280L) {
                         seekSignal.receive()
                     }
 
                     // Pacing delay so the frame is perceived smoothly
                     delay(pacingDelayMs)
+
+                    lastCycleDurationMs = (System.currentTimeMillis() - cycleStart).coerceIn(60L, 500L)
                 }
             }
         }
