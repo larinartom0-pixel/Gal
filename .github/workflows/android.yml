@@ -5,6 +5,7 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -34,9 +35,52 @@ jobs:
     - name: Build with Gradle
       run: ./gradlew assembleDebug
 
+    - name: Sign APK with Release Key
+      if: success()
+      env:
+        SIGNING_KEY_BASE64: ${{ secrets.SIGNING_KEY }}
+        KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+        KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+      run: |
+        if [ -n "$SIGNING_KEY_BASE64" ]; then
+          echo "Decoding release keystore from secrets..."
+          echo "$SIGNING_KEY_BASE64" | tr -d '\r\n ' | base64 -d > release.keystore
+          
+          BUILD_TOOLS_DIR=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
+          APKSIGNER="$BUILD_TOOLS_DIR/apksigner"
+          echo "Using apksigner: $APKSIGNER"
+          
+          mkdir -p app/build/outputs/apk/signed
+          INPUT_APK=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
+          OUTPUT_APK="app/build/outputs/apk/signed/app-release-signed.apk"
+          
+          ALIAS="${KEY_ALIAS:-my-key-alias}"
+          STORE_PASS="$KEY_STORE_PASSWORD"
+          KEY_PASS="${KEY_PASSWORD:-$KEY_STORE_PASSWORD}"
+          
+          echo "Signing APK: $INPUT_APK -> $OUTPUT_APK"
+          "$APKSIGNER" sign \
+            --ks release.keystore \
+            --ks-key-alias "$ALIAS" \
+            --ks-pass pass:"$STORE_PASS" \
+            --key-pass pass:"$KEY_PASS" \
+            --out "$OUTPUT_APK" \
+            "$INPUT_APK"
+            
+          echo "Verifying signed APK..."
+          "$APKSIGNER" verify -v "$OUTPUT_APK"
+          echo "Release APK successfully signed and verified!"
+        else
+          echo "SIGNING_KEY secret is not set. Skipping release signing."
+        fi
+
     - name: Upload APK
       uses: actions/upload-artifact@v4
       if: success()
       with:
-        name: app-debug
-        path: app/build/outputs/apk/debug/*.apk
+        name: app-apk
+        path: |
+          app/build/outputs/apk/signed/*.apk
+          app/build/outputs/apk/debug/*.apk
+
