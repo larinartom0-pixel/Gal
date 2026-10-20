@@ -116,6 +116,10 @@ interface AppStrings {
     val prev: String
     val next: String
     val speed: String
+    val reverseSpeed: String
+    val normalSpeed: String
+    val speedSelectTitle: String
+    val resetSpeed: String
 
     // Photo Detail
     val badgePhoto: String
@@ -365,6 +369,10 @@ object EnglishStrings : AppStrings {
     override val prev = "Previous"
     override val next = "Next"
     override val speed = "Speed"
+    override val reverseSpeed = "Reverse"
+    override val normalSpeed = "Forward"
+    override val speedSelectTitle = "Playback Speed"
+    override val resetSpeed = "Reset (1.0x)"
 
     override val badgePhoto = "PHOTO"
     override val photoZoomHint = "Double tap to zoom • Pinch to scale"
@@ -609,6 +617,10 @@ object UkrainianStrings : AppStrings {
     override val prev = "Попереднє"
     override val next = "Наступне"
     override val speed = "Швидкість"
+    override val reverseSpeed = "Реверс"
+    override val normalSpeed = "Вперед"
+    override val speedSelectTitle = "Швидкість відтворення"
+    override val resetSpeed = "Скинути (1.0x)"
 
     override val badgePhoto = "ФОТО"
     override val photoZoomHint = "Подвійний дотик для зуму • Масштабуйте жестом"
@@ -853,6 +865,10 @@ object RussianStrings : AppStrings {
     override val prev = "Предыдущее"
     override val next = "Следующее"
     override val speed = "Скорость"
+    override val reverseSpeed = "Реверс"
+    override val normalSpeed = "Вперед"
+    override val speedSelectTitle = "Скорость воспроизведения"
+    override val resetSpeed = "Сбросить (1.0x)"
 
     override val badgePhoto = "ФОТО"
     override val photoZoomHint = "Двойной тап для зума • Масштабируйте жестом"

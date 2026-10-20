@@ -45,6 +45,7 @@ import com.example.data.HiddenMedia
 import com.example.ui.i18n.LocalAppStrings
 import com.example.ui.theme.*
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import java.io.File
 import java.util.Locale
 
@@ -81,19 +82,20 @@ fun VideoPlayerView(
     val context = LocalContext.current
     val strings = LocalAppStrings.current
 
-    var isPlaying by remember { mutableStateOf(false) }
+    var isPlaybackActive by remember { mutableStateOf(true) }
     var currentPos by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
     var isBuffering by remember { mutableStateOf(true) }
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var isUserSeeking by remember { mutableStateOf(false) }
     var seekSliderPos by remember { mutableFloatStateOf(0f) }
+    var showSpeedDialog by remember { mutableStateOf(false) }
 
-    // Quick on-screen feedback (play/pause or ±10s seek)
+    // Quick on-screen feedback (play/pause, speed/reverse, or ±10s seek)
     var actionFeedback by remember { mutableStateOf<Pair<ImageVector, String>?>(null) }
     LaunchedEffect(actionFeedback) {
         if (actionFeedback != null) {
-            delay(500)
+            delay(650)
             actionFeedback = null
         }
     }
@@ -101,14 +103,24 @@ fun VideoPlayerView(
     // Media3 ExoPlayer setup & lifecycle
     DisposableEffect(media.id, media.internalPath) {
         isBuffering = true
-        isPlaying = false
+        isPlaybackActive = true
         currentPos = 0L
         duration = 0L
 
+        val isReverse = speed < 0f
         val player = ExoPlayer.Builder(context).build().apply {
-            playWhenReady = true
+            playWhenReady = !isReverse
             repeatMode = if (loopVideo) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
-            playbackParameters = PlaybackParameters(speed)
+            if (isReverse) {
+                volume = 0f
+            } else {
+                volume = 1f
+                try {
+                    playbackParameters = PlaybackParameters(speed.coerceIn(0.1f, 4.0f))
+                } catch (_: Exception) {
+                    playbackParameters = PlaybackParameters(1.0f)
+                }
+            }
 
             val file = File(media.internalPath)
             val uri = Uri.fromFile(file)
@@ -125,24 +137,30 @@ fun VideoPlayerView(
                         Player.STATE_READY -> {
                             isBuffering = false
                             duration = this@apply.duration.coerceAtLeast(0L)
-                            isPlaying = this@apply.isPlaying
+                            if (speed > 0f) {
+                                isPlaybackActive = this@apply.isPlaying
+                            }
                         }
                         Player.STATE_ENDED -> {
                             isBuffering = false
-                            isPlaying = false
-                            if (autoPlayNext && !loopVideo) {
-                                onNext()
+                            if (speed > 0f) {
+                                isPlaybackActive = false
+                                if (autoPlayNext && !loopVideo) {
+                                    onNext()
+                                }
                             }
                         }
                         Player.STATE_IDLE -> {
                             isBuffering = false
-                            isPlaying = false
+                            isPlaybackActive = false
                         }
                     }
                 }
 
                 override fun onIsPlayingChanged(playing: Boolean) {
-                    isPlaying = playing
+                    if (speed > 0f) {
+                        isPlaybackActive = playing
+                    }
                 }
             })
         }
@@ -161,7 +179,21 @@ fun VideoPlayerView(
     // React to playback speed changes
     LaunchedEffect(speed, exoPlayer) {
         exoPlayer?.let { player ->
-            player.playbackParameters = PlaybackParameters(speed)
+            if (speed > 0f) {
+                player.volume = 1f
+                try {
+                    player.playbackParameters = PlaybackParameters(speed.coerceIn(0.1f, 4.0f))
+                } catch (_: Exception) {
+                    player.playbackParameters = PlaybackParameters(1.0f)
+                }
+                if (isPlaybackActive && !player.isPlaying) {
+                    player.play()
+                }
+            } else {
+                // In reverse mode, pause ExoPlayer's forward audio and decoding loop
+                player.pause()
+                player.volume = 0f
+            }
         }
     }
 
@@ -170,6 +202,7 @@ fun VideoPlayerView(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) {
+                isPlaybackActive = false
                 exoPlayer?.pause()
             }
         }
@@ -179,19 +212,65 @@ fun VideoPlayerView(
         }
     }
 
-    // Progress ticker
-    LaunchedEffect(isPlaying, isBuffering) {
-        while (true) {
-            exoPlayer?.let { player ->
-                if (!isUserSeeking) {
-                    currentPos = player.currentPosition.coerceAtLeast(0L)
-                    val dur = player.duration.coerceAtLeast(0L)
-                    if (dur > 0L) {
-                        duration = dur
+    // Reverse Playback Coroutine Engine (smoothly seeks backwards frame by frame)
+    LaunchedEffect(speed, isPlaybackActive, loopVideo, duration, exoPlayer) {
+        if (speed < 0f && isPlaybackActive) {
+            val player = exoPlayer ?: return@LaunchedEffect
+            player.pause()
+            player.volume = 0f
+
+            // If at beginning, auto jump to the end of the video to play backwards
+            if (player.currentPosition <= 50L && duration > 0L) {
+                player.seekTo(duration)
+                currentPos = duration
+            }
+
+            val absSpeed = kotlin.math.abs(speed)
+            val tickIntervalMs = 65L
+            val stepMs = (tickIntervalMs * absSpeed).toLong().coerceAtLeast(30L)
+
+            while (isActive && isPlaybackActive && speed < 0f) {
+                val startMs = System.currentTimeMillis()
+                val cur = player.currentPosition
+                val nextPos = cur - stepMs
+
+                if (nextPos <= 0L) {
+                    if (loopVideo && duration > 0L) {
+                        player.seekTo(duration)
+                        currentPos = duration
+                    } else {
+                        player.seekTo(0L)
+                        currentPos = 0L
+                        isPlaybackActive = false
+                        break
+                    }
+                } else {
+                    player.seekTo(nextPos)
+                    currentPos = nextPos
+                }
+
+                val elapsed = System.currentTimeMillis() - startMs
+                val waitMs = (tickIntervalMs - elapsed).coerceIn(15L, 100L)
+                delay(waitMs)
+            }
+        }
+    }
+
+    // Forward Playback Progress ticker
+    LaunchedEffect(isPlaybackActive, speed, exoPlayer) {
+        if (speed > 0f) {
+            while (isActive) {
+                exoPlayer?.let { player ->
+                    if (!isUserSeeking) {
+                        currentPos = player.currentPosition.coerceAtLeast(0L)
+                        val dur = player.duration.coerceAtLeast(0L)
+                        if (dur > 0L) {
+                            duration = dur
+                        }
                     }
                 }
+                delay(200)
             }
-            delay(200)
         }
     }
 
@@ -297,6 +376,29 @@ fun VideoPlayerView(
 
                     Spacer(modifier = Modifier.width(8.dp))
 
+                    // Loop Video Button (Crisp Rectangular)
+                    if (onToggleLoop != null) {
+                        Surface(
+                            shape = RoundedCornerShape(0.dp),
+                            color = if (loopVideo) VaultPrimary.copy(alpha = 0.25f) else VaultSurfaceElevated,
+                            border = BorderStroke(1.dp, if (loopVideo) VaultPrimary else VaultBorder),
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clickable { onToggleLoop() }
+                                .testTag("player_loop_btn")
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Icons.Default.Repeat,
+                                    contentDescription = strings.loopVideo,
+                                    tint = if (loopVideo) VaultPrimary else VaultTextSecondary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+
                     // Delete Button (Crisp Rectangular)
                     Surface(
                         shape = RoundedCornerShape(0.dp),
@@ -331,12 +433,17 @@ fun VideoPlayerView(
                         detectTapGestures(
                             onTap = {
                                 exoPlayer?.let { player ->
-                                    if (player.isPlaying) {
+                                    if (isPlaybackActive) {
+                                        isPlaybackActive = false
                                         player.pause()
                                         actionFeedback = Icons.Default.Pause to strings.pause
                                     } else {
-                                        player.play()
-                                        actionFeedback = Icons.Default.PlayArrow to strings.play
+                                        isPlaybackActive = true
+                                        if (speed > 0f) {
+                                            player.play()
+                                        }
+                                        actionFeedback = (if (speed < 0f) Icons.Default.FastRewind else Icons.Default.PlayArrow) to 
+                                            (if (speed < 0f) strings.reverseSpeed else strings.play)
                                     }
                                 }
                             },
@@ -445,7 +552,7 @@ fun VideoPlayerView(
                         .padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    // Timeline: Current position / duration + Seek slider
+                    // Timeline: Current position / duration + Speed Badge + Seek slider
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -458,6 +565,53 @@ fun VideoPlayerView(
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
                         )
+
+                        // Visual Badge when Speed != 1.0 or Reverse active
+                        if (speed < 0f) {
+                            Surface(
+                                shape = RoundedCornerShape(0.dp),
+                                color = VaultError.copy(alpha = 0.2f),
+                                border = BorderStroke(1.dp, VaultError),
+                                modifier = Modifier.clickable { showSpeedDialog = true }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.FastRewind,
+                                        contentDescription = null,
+                                        tint = VaultError,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Text(
+                                        text = "${strings.reverseSpeed.uppercase()} ${speed}x",
+                                        color = VaultError,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                            }
+                        } else if (speed != 1.0f) {
+                            Surface(
+                                shape = RoundedCornerShape(0.dp),
+                                color = VaultPrimary.copy(alpha = 0.2f),
+                                border = BorderStroke(1.dp, VaultPrimary),
+                                modifier = Modifier.clickable { showSpeedDialog = true }
+                            ) {
+                                Text(
+                                    text = "⏩ ${speed}x",
+                                    color = VaultPrimary,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+
                         Text(
                             text = formatTime(duration),
                             color = VaultTextSecondary,
@@ -491,13 +645,13 @@ fun VideoPlayerView(
                             .testTag("player_seek_slider")
                     )
 
-                    // Exactly 4 Essential Buttons in a Clean Row:
-                    // 1. Previous | 2. Play/Pause | 3. Next | 4. Shuffle
+                    // 5 Buttons in a Clean Row:
+                    // 1. Previous | 2. Play/Pause | 3. Next | 4. Shuffle | 5. Speed & Reverse
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         // 1. Previous Track
@@ -527,14 +681,18 @@ fun VideoPlayerView(
                             color = VaultPrimary,
                             border = BorderStroke(1.5.dp, VaultPrimaryLight),
                             modifier = Modifier
-                                .weight(1.4f)
+                                .weight(1.3f)
                                 .height(46.dp)
                                 .clickable {
                                     exoPlayer?.let { player ->
-                                        if (player.isPlaying) {
+                                        if (isPlaybackActive) {
+                                            isPlaybackActive = false
                                             player.pause()
                                         } else {
-                                            player.play()
+                                            isPlaybackActive = true
+                                            if (speed > 0f) {
+                                                player.play()
+                                            }
                                         }
                                     }
                                 }
@@ -542,8 +700,8 @@ fun VideoPlayerView(
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
-                                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                    contentDescription = if (isPlaying) strings.pause else strings.play,
+                                    imageVector = if (isPlaybackActive) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = if (isPlaybackActive) strings.pause else strings.play,
                                     tint = VaultOnPrimary,
                                     modifier = Modifier.size(28.dp)
                                 )
@@ -584,15 +742,72 @@ fun VideoPlayerView(
                                 .testTag("player_shuffle_btn")
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                Icon(
+                                    imageVector = Icons.Default.Shuffle,
+                                    contentDescription = if (isShuffleActive) strings.shuffleRandom else strings.shuffleOff,
+                                    tint = if (isShuffleActive) VaultPrimary else VaultTextSecondary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+
+                        // 5. Speed & Reverse Button (Tap to open selector, Long press to toggle direction)
+                        val isReverse = speed < 0f
+                        val absSpeed = kotlin.math.abs(speed)
+                        val speedDisplay = if (absSpeed % 1f == 0f) "${absSpeed.toInt()}x" else "${absSpeed}x"
+
+                        Surface(
+                            shape = RoundedCornerShape(0.dp),
+                            color = if (isReverse) VaultError.copy(alpha = 0.2f) else if (speed != 1.0f) VaultPrimary.copy(alpha = 0.2f) else VaultSurfaceElevated,
+                            border = BorderStroke(1.dp, if (isReverse) VaultError else if (speed != 1.0f) VaultPrimary else VaultBorder),
+                            modifier = Modifier
+                                .weight(1.15f)
+                                .height(46.dp)
+                                .pointerInput(speed) {
+                                    detectTapGestures(
+                                        onTap = { showSpeedDialog = true },
+                                        onLongPress = {
+                                            // Toggle direction between forward and reverse
+                                            val newSpeed = -speed
+                                            onSpeedChange(newSpeed)
+                                            actionFeedback = (if (newSpeed < 0f) Icons.Default.FastRewind else Icons.Default.FastForward) to 
+                                                (if (newSpeed < 0f) "⏪ ${strings.reverseSpeed}" else "⏩ ${strings.normalSpeed}")
+                                        }
+                                    )
+                                }
+                                .testTag("player_speed_btn")
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Shuffle,
-                                        contentDescription = if (isShuffleActive) strings.shuffleRandom else strings.shuffleOff,
-                                        tint = if (isShuffleActive) VaultPrimary else VaultTextSecondary,
-                                        modifier = Modifier.size(20.dp)
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        if (isReverse) {
+                                            Icon(
+                                                imageVector = Icons.Default.FastRewind,
+                                                contentDescription = strings.reverseSpeed,
+                                                tint = VaultError,
+                                                modifier = Modifier.size(13.dp)
+                                            )
+                                        }
+                                        Text(
+                                            text = if (isReverse) "-$speedDisplay" else speedDisplay,
+                                            color = if (isReverse) VaultError else if (speed != 1.0f) VaultPrimary else VaultTextPrimary,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                    }
+                                    Text(
+                                        text = if (isReverse) strings.reverseSpeed.uppercase() else strings.speed.uppercase(),
+                                        color = if (isReverse) VaultError.copy(alpha = 0.85f) else VaultTextSecondary,
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        fontFamily = FontFamily.Monospace
                                     )
                                 }
                             }
@@ -601,5 +816,225 @@ fun VideoPlayerView(
                 }
             }
         }
+
+        // Speed & Reverse Modal Dialog
+        if (showSpeedDialog) {
+            SpeedSelectorDialog(
+                currentSpeed = speed,
+                strings = strings,
+                onSpeedSelected = { newSpeed ->
+                    onSpeedChange(newSpeed)
+                    val isRev = newSpeed < 0f
+                    actionFeedback = (if (isRev) Icons.Default.FastRewind else Icons.Default.FastForward) to 
+                        (if (isRev) "⏪ ${strings.reverseSpeed} ${newSpeed}x" else "⏩ ${newSpeed}x")
+                },
+                onDismiss = { showSpeedDialog = false }
+            )
+        }
     }
 }
+
+/**
+ * Minimalist, high-tech Speed & Reverse selection dialog.
+ * Allows picking forward speeds (0.25x - 3.0x) or reverse playback speeds (-0.25x - -3.0x).
+ */
+@Composable
+fun SpeedSelectorDialog(
+    currentSpeed: Float,
+    strings: com.example.ui.i18n.AppStrings,
+    onSpeedSelected: (Float) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var isReverseTab by remember { mutableStateOf(currentSpeed < 0f) }
+
+    val forwardSpeeds = listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 3.0f)
+    val reverseSpeeds = listOf(-0.25f, -0.5f, -0.75f, -1.0f, -1.25f, -1.5f, -2.0f, -3.0f)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = VaultSurfaceElevated,
+        shape = RoundedCornerShape(0.dp),
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = strings.speedSelectTitle.uppercase(),
+                    color = VaultTextPrimary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                )
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = null,
+                        tint = VaultTextSecondary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                // Direction Toggle Tabs (Forward vs Reverse)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Forward Tab
+                    Surface(
+                        shape = RoundedCornerShape(0.dp),
+                        color = if (!isReverseTab) VaultPrimary else VaultSurface,
+                        border = BorderStroke(1.dp, if (!isReverseTab) VaultPrimaryLight else VaultBorder),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(40.dp)
+                            .clickable { isReverseTab = false }
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.FastForward,
+                                    contentDescription = null,
+                                    tint = if (!isReverseTab) VaultOnPrimary else VaultTextSecondary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    text = strings.normalSpeed,
+                                    color = if (!isReverseTab) VaultOnPrimary else VaultTextSecondary,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+                    }
+
+                    // Reverse Tab
+                    Surface(
+                        shape = RoundedCornerShape(0.dp),
+                        color = if (isReverseTab) VaultError else VaultSurface,
+                        border = BorderStroke(1.dp, if (isReverseTab) VaultError else VaultBorder),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(40.dp)
+                            .clickable { isReverseTab = true }
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.FastRewind,
+                                    contentDescription = null,
+                                    tint = if (isReverseTab) Color.White else VaultTextSecondary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    text = strings.reverseSpeed,
+                                    color = if (isReverseTab) Color.White else VaultTextSecondary,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Grid of Speed Chips (3 per row)
+                val targetSpeeds = if (isReverseTab) reverseSpeeds else forwardSpeeds
+                val chunked = targetSpeeds.chunked(3)
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    chunked.forEach { rowSpeeds ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            rowSpeeds.forEach { spd ->
+                                val isSelected = currentSpeed == spd
+                                val label = "${spd}x"
+                                Surface(
+                                    shape = RoundedCornerShape(0.dp),
+                                    color = if (isSelected) {
+                                        if (spd < 0f) VaultError else VaultPrimary
+                                    } else VaultSurface,
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (isSelected) {
+                                            if (spd < 0f) VaultError else VaultPrimaryLight
+                                        } else VaultBorder
+                                    ),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(38.dp)
+                                        .clickable {
+                                            onSpeedSelected(spd)
+                                            onDismiss()
+                                        }
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text = label,
+                                            color = if (isSelected) {
+                                                if (spd < 0f) Color.White else VaultOnPrimary
+                                            } else VaultTextPrimary,
+                                            fontSize = 12.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                    }
+                                }
+                            }
+                            repeat(3 - rowSpeeds.size) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Surface(
+                shape = RoundedCornerShape(0.dp),
+                color = VaultSurface,
+                border = BorderStroke(1.dp, VaultBorder),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(38.dp)
+                    .clickable {
+                        onSpeedSelected(1.0f)
+                        onDismiss()
+                    }
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = strings.resetSpeed,
+                        color = VaultAccentCyan,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            }
+        }
+    )
+}
+
