@@ -91,12 +91,15 @@ class MediaRepository(
         // Determine if it is video based on MIME type or extension
         val isVideo = mimeType.startsWith("video") || 
                       originalName.endsWith(".mp4", ignoreCase = true) || 
+                      originalName.endsWith(".webm", ignoreCase = true) || 
                       originalName.endsWith(".mkv", ignoreCase = true) || 
                       originalName.endsWith(".avi", ignoreCase = true) || 
+                      originalName.endsWith(".mov", ignoreCase = true) || 
+                      originalName.endsWith(".flv", ignoreCase = true) || 
                       originalName.endsWith(".3gp", ignoreCase = true)
 
         if (isVideo && !mimeType.startsWith("video")) {
-            mimeType = "video/mp4"
+            mimeType = if (originalName.endsWith(".webm", ignoreCase = true)) "video/webm" else "video/mp4"
         } else if (!isVideo && !mimeType.startsWith("image")) {
             mimeType = "image/jpeg"
         }

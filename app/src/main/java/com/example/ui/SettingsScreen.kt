@@ -150,7 +150,7 @@ fun SettingsScreen(
         ) {
             // STATS OVERVIEW CARD
             Surface(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(0.dp),
                 color = VaultSurfaceElevated,
                 border = BorderStroke(1.dp, VaultBorderSubtle),
                 modifier = Modifier.fillMaxWidth()
@@ -195,7 +195,7 @@ fun SettingsScreen(
             SettingsSectionHeader(title = strings.sectionLanguage, icon = Icons.Default.Language)
 
             Surface(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(0.dp),
                 color = VaultSurfaceElevated,
                 border = BorderStroke(1.dp, VaultBorderSubtle),
                 modifier = Modifier.fillMaxWidth()
@@ -220,12 +220,12 @@ fun SettingsScreen(
                     languageOptions.forEach { (lang, label) ->
                         val isSelected = appLanguage == lang
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(0.dp),
                             color = if (isSelected) VaultPrimary.copy(alpha = 0.15f) else VaultSurface,
                             border = BorderStroke(1.dp, if (isSelected) VaultPrimary else VaultBorderSubtle),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(0.dp))
                                 .clickable { viewModel.setLanguage(lang) }
                         ) {
                             Row(
@@ -266,7 +266,7 @@ fun SettingsScreen(
             SettingsSectionHeader(title = strings.sectionPlayback, icon = Icons.Default.PlayCircleOutline)
 
             Surface(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(0.dp),
                 color = VaultSurfaceElevated,
                 border = BorderStroke(1.dp, VaultBorderSubtle),
                 modifier = Modifier.fillMaxWidth()
@@ -356,12 +356,12 @@ fun SettingsScreen(
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
-                                        .clip(RoundedCornerShape(8.dp))
+                                        .clip(RoundedCornerShape(0.dp))
                                         .background(if (isSelected) VaultPrimary else VaultBackground)
                                         .border(
                                             width = 1.dp,
                                             color = if (isSelected) VaultPrimaryLight else VaultBorderSubtle,
-                                            shape = RoundedCornerShape(8.dp)
+                                            shape = RoundedCornerShape(0.dp)
                                         )
                                         .clickable { viewModel.setDefaultPlaybackSpeed(sp) }
                                         .padding(vertical = 8.dp),
@@ -384,7 +384,7 @@ fun SettingsScreen(
             SettingsSectionHeader(title = strings.sectionAppearance, icon = Icons.Default.GridView)
 
             Surface(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(0.dp),
                 color = VaultSurfaceElevated,
                 border = BorderStroke(1.dp, VaultBorderSubtle),
                 modifier = Modifier.fillMaxWidth()
@@ -414,7 +414,7 @@ fun SettingsScreen(
                                 )
                             }
                             Surface(
-                                shape = RoundedCornerShape(8.dp),
+                                shape = RoundedCornerShape(0.dp),
                                 color = VaultPrimary.copy(alpha = 0.2f),
                                 border = BorderStroke(1.dp, VaultPrimary.copy(alpha = 0.4f))
                             ) {
@@ -437,12 +437,12 @@ fun SettingsScreen(
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
-                                        .clip(RoundedCornerShape(8.dp))
+                                        .clip(RoundedCornerShape(0.dp))
                                         .background(if (isSelected) VaultPrimary else VaultBackground)
                                         .border(
                                             width = 1.dp,
                                             color = if (isSelected) VaultPrimaryLight else VaultBorderSubtle,
-                                            shape = RoundedCornerShape(8.dp)
+                                            shape = RoundedCornerShape(0.dp)
                                         )
                                         .clickable { viewModel.setGridColumnCount(cols) }
                                         .padding(vertical = 8.dp),
@@ -517,12 +517,12 @@ fun SettingsScreen(
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
-                                        .clip(RoundedCornerShape(8.dp))
+                                        .clip(RoundedCornerShape(0.dp))
                                         .background(if (isSelected) VaultPrimary else VaultBackground)
                                         .border(
                                             width = 1.dp,
                                             color = if (isSelected) VaultPrimaryLight else VaultBorderSubtle,
-                                            shape = RoundedCornerShape(8.dp)
+                                            shape = RoundedCornerShape(0.dp)
                                         )
                                         .clickable { viewModel.setSortOrder(order) }
                                         .padding(vertical = 8.dp),
@@ -547,7 +547,7 @@ fun SettingsScreen(
             SettingsSectionHeader(title = strings.sectionStorage, icon = Icons.Default.FolderSpecial)
 
             Surface(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(0.dp),
                 color = VaultSurfaceElevated,
                 border = BorderStroke(1.dp, VaultBorderSubtle),
                 modifier = Modifier.fillMaxWidth()
@@ -566,7 +566,7 @@ fun SettingsScreen(
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Surface(
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(0.dp),
                             color = VaultBackground,
                             border = BorderStroke(1.dp, VaultBorderSubtle),
                             modifier = Modifier.fillMaxWidth()
@@ -604,7 +604,7 @@ fun SettingsScreen(
                                     tempFolderPath = workingDir
                                     showEditFolderDialog = true
                                 },
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(0.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = VaultPrimary),
                                 modifier = Modifier.weight(1f)
                             ) {
@@ -615,7 +615,7 @@ fun SettingsScreen(
 
                             OutlinedButton(
                                 onClick = { viewModel.resetWorkingDirectory() },
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(0.dp),
                                 border = BorderStroke(1.dp, VaultBorderSubtle),
                                 modifier = Modifier.weight(1f)
                             ) {
@@ -638,7 +638,7 @@ fun SettingsScreen(
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Surface(
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(0.dp),
                             color = VaultBackground,
                             border = BorderStroke(1.dp, VaultBorderSubtle),
                             modifier = Modifier.fillMaxWidth()
@@ -673,7 +673,7 @@ fun SettingsScreen(
                         ) {
                             Button(
                                 onClick = { showFolderPickerDialog = true },
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(0.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = VaultPrimary),
                                 modifier = Modifier.weight(1f)
                             ) {
@@ -684,7 +684,7 @@ fun SettingsScreen(
 
                             OutlinedButton(
                                 onClick = { viewModel.rescanVideoFolder() },
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(0.dp),
                                 border = BorderStroke(1.dp, VaultBorderSubtle),
                                 modifier = Modifier.weight(1f)
                             ) {
@@ -722,7 +722,7 @@ fun SettingsScreen(
                                 contentColor = VaultAccentCyan
                             ),
                             border = BorderStroke(1.dp, VaultAccentCyan.copy(alpha = 0.5f)),
-                            shape = RoundedCornerShape(10.dp)
+                            shape = RoundedCornerShape(0.dp)
                         ) {
                             Icon(Icons.Default.CleaningServices, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
@@ -730,88 +730,6 @@ fun SettingsScreen(
                         }
                     }
 
-                    HorizontalDivider(color = VaultBorderSubtle)
-
-                    // BATCH PROCESSING QUEUE SIZE
-                    Column {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = strings.sectionBatchQueue,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
-                                    color = VaultTextPrimary
-                                )
-                                Text(
-                                    text = strings.batchQueueDesc,
-                                    fontSize = 11.sp,
-                                    color = VaultTextMuted
-                                )
-                            }
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = VaultPrimary.copy(alpha = 0.2f),
-                                border = BorderStroke(1.dp, VaultPrimary.copy(alpha = 0.5f))
-                            ) {
-                                Text(
-                                    text = "$queueSize",
-                                    color = VaultPrimaryLight,
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Slider(
-                            value = queueSize.toFloat(),
-                            onValueChange = { viewModel.setBatchQueueSize(it.toInt()) },
-                            valueRange = 1f..20f,
-                            steps = 18,
-                            colors = SliderDefaults.colors(
-                                thumbColor = VaultPrimaryLight,
-                                activeTrackColor = VaultPrimary,
-                                inactiveTrackColor = VaultSurfaceHighlight
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        // Quick Selection Chips
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            listOf(1, 5, 10, 15, 20).forEach { sizeOption ->
-                                val isSelected = queueSize == sizeOption
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(if (isSelected) VaultPrimary else VaultBackground)
-                                        .border(
-                                            width = 1.dp,
-                                            color = if (isSelected) VaultPrimaryLight else VaultBorderSubtle,
-                                            shape = RoundedCornerShape(8.dp)
-                                        )
-                                        .clickable { viewModel.setBatchQueueSize(sizeOption) }
-                                        .padding(vertical = 8.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = "$sizeOption",
-                                        color = if (isSelected) VaultOnPrimary else VaultTextSecondary,
-                                        fontSize = 12.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                                    )
-                                }
-                            }
-                        }
-                    }
                 }
             }
 
@@ -819,7 +737,7 @@ fun SettingsScreen(
             SettingsSectionHeader(title = strings.sectionPermissions, icon = Icons.Default.Security)
 
             Surface(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(0.dp),
                 color = VaultSurfaceElevated,
                 border = BorderStroke(1.dp, VaultBorderSubtle),
                 modifier = Modifier.fillMaxWidth()
@@ -833,7 +751,7 @@ fun SettingsScreen(
                     Box(
                         modifier = Modifier
                             .size(40.dp)
-                            .clip(CircleShape)
+                            .clip(RoundedCornerShape(0.dp))
                             .background(if (hasAllFilesAccess) VaultAccentGreen.copy(alpha = 0.15f) else VaultErrorContainer),
                         contentAlignment = Alignment.Center
                     ) {
@@ -875,7 +793,7 @@ fun SettingsScreen(
                                     }
                                 }
                             },
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(0.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = VaultPrimary),
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.height(32.dp)
@@ -888,7 +806,7 @@ fun SettingsScreen(
 
             // SECTION 6: SECURITY & ABOUT VAULT (STREAMLINED)
             Surface(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(0.dp),
                 color = VaultSurfaceElevated,
                 border = BorderStroke(1.dp, VaultBorderSubtle),
                 modifier = Modifier.fillMaxWidth()
@@ -976,7 +894,7 @@ fun SettingsScreen(
                         if (onPlayIntro != null) {
                             OutlinedButton(
                                 onClick = { onPlayIntro.invoke() },
-                                shape = RoundedCornerShape(8.dp),
+                                shape = RoundedCornerShape(0.dp),
                                 border = BorderStroke(1.dp, VaultPrimary.copy(alpha = 0.5f)),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                                 modifier = Modifier.height(32.dp)

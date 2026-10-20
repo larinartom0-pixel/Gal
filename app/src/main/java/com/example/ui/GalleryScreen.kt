@@ -255,7 +255,7 @@ fun GalleryScreen(
                                 onClick = { viewModel.clearSelection() },
                                 modifier = Modifier
                                     .size(38.dp)
-                                    .clip(CircleShape)
+                                    .clip(RoundedCornerShape(0.dp))
                                     .background(VaultSurfaceElevated)
                             ) {
                                 Icon(
@@ -299,7 +299,7 @@ fun GalleryScreen(
                         } else if (isSearchActive) {
                             // Search Active Top Bar
                             Surface(
-                                shape = RoundedCornerShape(12.dp),
+                                shape = RoundedCornerShape(0.dp),
                                 color = VaultSurfaceElevated,
                                 border = BorderStroke(1.dp, VaultPrimary.copy(alpha = 0.5f)),
                                 modifier = Modifier
@@ -351,7 +351,7 @@ fun GalleryScreen(
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Surface(
-                                    shape = RoundedCornerShape(10.dp),
+                                    shape = RoundedCornerShape(0.dp),
                                     color = VaultPrimary.copy(alpha = 0.15f),
                                     border = BorderStroke(1.dp, VaultPrimary.copy(alpha = 0.4f)),
                                     modifier = Modifier.size(36.dp)
@@ -391,7 +391,7 @@ fun GalleryScreen(
                                     onClick = { isSearchActive = true },
                                     modifier = Modifier
                                         .size(36.dp)
-                                        .clip(CircleShape)
+                                        .clip(RoundedCornerShape(0.dp))
                                         .background(VaultSurfaceElevated)
                                         .testTag("search_btn")
                                 ) {
@@ -411,7 +411,7 @@ fun GalleryScreen(
                                     },
                                     modifier = Modifier
                                         .size(36.dp)
-                                        .clip(CircleShape)
+                                        .clip(RoundedCornerShape(0.dp))
                                         .background(VaultSurfaceElevated)
                                         .testTag("columns_btn")
                                 ) {
@@ -428,7 +428,7 @@ fun GalleryScreen(
                                     onClick = { showSettings = true },
                                     modifier = Modifier
                                         .size(36.dp)
-                                        .clip(CircleShape)
+                                        .clip(RoundedCornerShape(0.dp))
                                         .background(VaultSurfaceElevated)
                                         .testTag("settings_btn")
                                 ) {
@@ -448,9 +448,9 @@ fun GalleryScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 12.dp, vertical = 4.dp)
-                            .clip(RoundedCornerShape(14.dp))
+                            .clip(RoundedCornerShape(0.dp))
                             .background(VaultSurfaceElevated)
-                            .border(1.dp, VaultBorderSubtle, RoundedCornerShape(14.dp))
+                            .border(1.dp, VaultBorderSubtle, RoundedCornerShape(0.dp))
                             .padding(3.dp),
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
@@ -458,7 +458,7 @@ fun GalleryScreen(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .clip(RoundedCornerShape(10.dp))
+                                .clip(RoundedCornerShape(0.dp))
                                 .background(
                                     if (activeTab == 0) VaultPrimary else Color.Transparent
                                 )
@@ -486,7 +486,7 @@ fun GalleryScreen(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Surface(
-                                    shape = RoundedCornerShape(10.dp),
+                                    shape = RoundedCornerShape(0.dp),
                                     color = if (activeTab == 0) VaultPrimaryDark.copy(alpha = 0.5f) else VaultSurfaceHighlight
                                 ) {
                                     Text(
@@ -505,7 +505,7 @@ fun GalleryScreen(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .clip(RoundedCornerShape(10.dp))
+                                .clip(RoundedCornerShape(0.dp))
                                 .background(
                                     if (activeTab == 1) VaultPrimary else Color.Transparent
                                 )
@@ -533,7 +533,7 @@ fun GalleryScreen(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Surface(
-                                    shape = RoundedCornerShape(10.dp),
+                                    shape = RoundedCornerShape(0.dp),
                                     color = if (activeTab == 1) VaultPrimaryDark.copy(alpha = 0.5f) else VaultSurfaceHighlight
                                 ) {
                                     Text(
@@ -552,7 +552,7 @@ fun GalleryScreen(
                         Box(
                             modifier = Modifier
                                 .weight(1.15f)
-                                .clip(RoundedCornerShape(10.dp))
+                                .clip(RoundedCornerShape(0.dp))
                                 .background(
                                     if (activeTab == 2) VaultPrimary else Color.Transparent
                                 )
@@ -581,7 +581,7 @@ fun GalleryScreen(
                                 )
                                 if (duplicateGroups.isNotEmpty()) {
                                     Surface(
-                                        shape = RoundedCornerShape(10.dp),
+                                        shape = RoundedCornerShape(0.dp),
                                         color = if (activeTab == 2) VaultPrimaryDark.copy(alpha = 0.5f) else VaultAccentAmber.copy(alpha = 0.2f)
                                     ) {
                                         Text(
@@ -613,7 +613,7 @@ fun GalleryScreen(
                         },
                         containerColor = VaultPrimary,
                         contentColor = VaultOnPrimary,
-                        shape = RoundedCornerShape(16.dp),
+                        shape = RoundedCornerShape(0.dp),
                         modifier = Modifier
                             .padding(16.dp)
                             .testTag("import_photo_fab")
@@ -648,7 +648,7 @@ fun GalleryScreen(
                         Surface(
                             color = VaultErrorContainer,
                             border = BorderStroke(1.dp, VaultError.copy(alpha = 0.3f)),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(0.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 12.dp, vertical = 4.dp)
@@ -701,7 +701,7 @@ fun GalleryScreen(
                                         containerColor = VaultError,
                                         contentColor = Color.White
                                     ),
-                                    shape = RoundedCornerShape(8.dp),
+                                    shape = RoundedCornerShape(0.dp),
                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                                     modifier = Modifier.height(28.dp)
                                 ) {
@@ -735,7 +735,7 @@ fun GalleryScreen(
                                 // COMPACT MODE SWITCHER & SOURCE BAR
                                 Surface(
                                     color = VaultSurface,
-                                    shape = RoundedCornerShape(14.dp),
+                                    shape = RoundedCornerShape(0.dp),
                                     border = BorderStroke(1.dp, VaultBorder),
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -749,9 +749,9 @@ fun GalleryScreen(
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .clip(RoundedCornerShape(10.dp))
+                                                .clip(RoundedCornerShape(0.dp))
                                                 .background(VaultBackground)
-                                                .border(1.dp, VaultBorderSubtle, RoundedCornerShape(10.dp))
+                                                .border(1.dp, VaultBorderSubtle, RoundedCornerShape(0.dp))
                                                 .padding(3.dp),
                                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                                             verticalAlignment = Alignment.CenterVertically
@@ -760,14 +760,14 @@ fun GalleryScreen(
                                             Box(
                                                 modifier = Modifier
                                                     .weight(1f)
-                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .clip(RoundedCornerShape(0.dp))
                                                     .background(
                                                         if (isGalleryBrowseMode) VaultPrimary.copy(alpha = 0.25f) else Color.Transparent
                                                     )
                                                     .border(
                                                         1.dp,
                                                         if (isGalleryBrowseMode) VaultPrimary else Color.Transparent,
-                                                        RoundedCornerShape(8.dp)
+                                                        RoundedCornerShape(0.dp)
                                                     )
                                                     .clickable { viewModel.setGalleryBrowseMode(true) }
                                                     .padding(vertical = 7.dp, horizontal = 8.dp)
@@ -799,14 +799,14 @@ fun GalleryScreen(
                                             Box(
                                                 modifier = Modifier
                                                     .weight(1f)
-                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .clip(RoundedCornerShape(0.dp))
                                                     .background(
                                                         if (!isGalleryBrowseMode) VaultAccentCyan.copy(alpha = 0.2f) else Color.Transparent
                                                     )
                                                     .border(
                                                         1.dp,
                                                         if (!isGalleryBrowseMode) VaultAccentCyan else Color.Transparent,
-                                                        RoundedCornerShape(8.dp)
+                                                        RoundedCornerShape(0.dp)
                                                     )
                                                     .clickable { viewModel.setGalleryBrowseMode(false) }
                                                     .padding(vertical = 7.dp, horizontal = 8.dp)
@@ -874,7 +874,7 @@ fun GalleryScreen(
                                                             contentColor = VaultAccentCyan
                                                         ),
                                                         border = BorderStroke(1.dp, VaultAccentCyan.copy(alpha = 0.4f)),
-                                                        shape = RoundedCornerShape(8.dp),
+                                                        shape = RoundedCornerShape(0.dp),
                                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                                                         modifier = Modifier.height(30.dp)
                                                     ) {
@@ -916,9 +916,9 @@ fun GalleryScreen(
                                                     },
                                                     modifier = Modifier
                                                         .size(30.dp)
-                                                        .clip(RoundedCornerShape(8.dp))
+                                                        .clip(RoundedCornerShape(0.dp))
                                                         .background(VaultPrimary.copy(alpha = 0.15f))
-                                                        .border(1.dp, VaultPrimary.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                                        .border(1.dp, VaultPrimary.copy(alpha = 0.4f), RoundedCornerShape(0.dp))
                                                         .testTag("save_to_drive_button")
                                                 ) {
                                                     Icon(
@@ -936,9 +936,9 @@ fun GalleryScreen(
                                                     },
                                                     modifier = Modifier
                                                         .size(30.dp)
-                                                        .clip(RoundedCornerShape(8.dp))
+                                                        .clip(RoundedCornerShape(0.dp))
                                                         .background(VaultAccentCyan.copy(alpha = 0.12f))
-                                                        .border(1.dp, VaultAccentCyan.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
+                                                        .border(1.dp, VaultAccentCyan.copy(alpha = 0.35f), RoundedCornerShape(0.dp))
                                                         .testTag("load_from_drive_button")
                                                 ) {
                                                     Icon(
@@ -986,7 +986,7 @@ fun GalleryScreen(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .height(3.dp)
-                                                .clip(RoundedCornerShape(1.5.dp)),
+                                                .clip(RoundedCornerShape(0.dp)),
                                             color = VaultAccentAmber,
                                             trackColor = VaultSurfaceHighlight
                                         )
@@ -1018,7 +1018,7 @@ fun GalleryScreen(
                                             Spacer(modifier = Modifier.height(10.dp))
                                             OutlinedButton(
                                                 onClick = { viewModel.setSearchQuery("") },
-                                                shape = RoundedCornerShape(10.dp)
+                                                shape = RoundedCornerShape(0.dp)
                                             ) {
                                                 Text(strings.clearSearch)
                                             }
@@ -1066,7 +1066,7 @@ fun GalleryScreen(
                                                 Button(
                                                     onClick = { showFolderPicker = true },
                                                     colors = ButtonDefaults.buttonColors(containerColor = VaultPrimary),
-                                                    shape = RoundedCornerShape(10.dp)
+                                                    shape = RoundedCornerShape(0.dp)
                                                 ) {
                                                     Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
                                                     Spacer(modifier = Modifier.width(6.dp))
@@ -1077,7 +1077,7 @@ fun GalleryScreen(
                                                     onClick = { viewModel.createTestHiddenFolderWithDuplicates() },
                                                     colors = ButtonDefaults.outlinedButtonColors(contentColor = VaultAccentCyan),
                                                     border = BorderStroke(1.dp, VaultAccentCyan.copy(alpha = 0.5f)),
-                                                    shape = RoundedCornerShape(10.dp)
+                                                    shape = RoundedCornerShape(0.dp)
                                                 ) {
                                                     Icon(Icons.Default.AutoFixHigh, contentDescription = null, modifier = Modifier.size(16.dp))
                                                     Spacer(modifier = Modifier.width(6.dp))
@@ -1100,12 +1100,12 @@ fun GalleryScreen(
                                             Box(
                                                 modifier = Modifier
                                                     .aspectRatio(1f)
-                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .clip(RoundedCornerShape(0.dp))
                                                     .background(VaultSurfaceElevated)
                                                     .border(
                                                         width = if (isSelected) 2.5.dp else 1.dp,
                                                         color = if (isSelected) VaultPrimaryLight else VaultBorderSubtle,
-                                                        shape = RoundedCornerShape(10.dp)
+                                                        shape = RoundedCornerShape(0.dp)
                                                     )
                                                     .combinedClickable(
                                                         onLongClick = { viewModel.toggleSelection(media.id) },
@@ -1126,7 +1126,7 @@ fun GalleryScreen(
                                                     fileSize = media.size,
                                                     lastModified = media.dateHidden,
                                                     contentDescription = media.originalFilename,
-                                                    cornerRadius = 10.dp,
+                                                    cornerRadius = 0.dp,
                                                     showPlayOverlay = false,
                                                     modifier = Modifier.fillMaxSize()
                                                 )
@@ -1231,7 +1231,7 @@ fun GalleryScreen(
                                         Spacer(modifier = Modifier.height(10.dp))
                                         OutlinedButton(
                                             onClick = { viewModel.setSearchQuery("") },
-                                            shape = RoundedCornerShape(10.dp)
+                                            shape = RoundedCornerShape(0.dp)
                                         ) {
                                             Text(strings.clearSearch)
                                         }
@@ -1290,12 +1290,12 @@ fun GalleryScreen(
                                         Box(
                                             modifier = Modifier
                                                 .aspectRatio(1f)
-                                                .clip(RoundedCornerShape(12.dp))
+                                                .clip(RoundedCornerShape(0.dp))
                                                 .background(VaultSurfaceElevated)
                                                 .border(
                                                     width = if (isSelected) 2.5.dp else 1.dp,
                                                     color = if (isSelected) VaultPrimaryLight else VaultBorderSubtle,
-                                                    shape = RoundedCornerShape(12.dp)
+                                                    shape = RoundedCornerShape(0.dp)
                                                 )
                                                 .combinedClickable(
                                                     onLongClick = { viewModel.toggleSelection(media.id) },
@@ -1376,7 +1376,7 @@ fun GalleryScreen(
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(20.dp),
+                        shape = RoundedCornerShape(0.dp),
                         color = VaultSurfaceElevated,
                         border = BorderStroke(1.dp, VaultBorderSubtle),
                         shadowElevation = 8.dp,
@@ -1405,7 +1405,7 @@ fun GalleryScreen(
                                     containerColor = VaultErrorContainer,
                                     contentColor = VaultError
                                 ),
-                                shape = RoundedCornerShape(12.dp),
+                                shape = RoundedCornerShape(0.dp),
                                 modifier = Modifier.testTag("multi_delete_btn")
                             ) {
                                 Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -1505,7 +1505,7 @@ fun GalleryScreen(
             AlertDialog(
                 onDismissRequest = {}, // Non-cancellable during atomic operation
                 containerColor = VaultSurfaceElevated,
-                shape = RoundedCornerShape(18.dp),
+                shape = RoundedCornerShape(0.dp),
                 titleContentColor = VaultTextPrimary,
                 textContentColor = VaultTextSecondary,
                 title = {
@@ -1557,7 +1557,7 @@ fun GalleryScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(6.dp)
-                                    .clip(RoundedCornerShape(3.dp))
+                                    .clip(RoundedCornerShape(0.dp))
                             )
                         } else {
                             LinearProgressIndicator(
@@ -1566,7 +1566,7 @@ fun GalleryScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(6.dp)
-                                    .clip(RoundedCornerShape(3.dp))
+                                    .clip(RoundedCornerShape(0.dp))
                             )
                         }
                         Text(

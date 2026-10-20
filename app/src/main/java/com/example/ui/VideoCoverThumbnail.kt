@@ -48,7 +48,7 @@ fun VideoCoverThumbnail(
     lastModified: Long,
     contentDescription: String?,
     modifier: Modifier = Modifier,
-    cornerRadius: Dp = 8.dp,
+    cornerRadius: Dp = 0.dp,
     showPlayOverlay: Boolean = false,
     playIconSize: Dp = 20.dp,
     contentScale: ContentScale = ContentScale.Crop

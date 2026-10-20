@@ -86,7 +86,7 @@ fun FolderPickerDialog(
                             containerColor = VaultPrimary,
                             contentColor = VaultOnPrimary
                         ),
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(0.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(Icons.Default.FolderShared, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -130,7 +130,7 @@ fun FolderPickerDialog(
                     popularFolders.forEach { (label, path) ->
                         Surface(
                             color = if (pathInput == path) VaultPrimary.copy(alpha = 0.2f) else VaultBackground,
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(0.dp),
                             border = BorderStroke(1.dp, if (pathInput == path) VaultPrimary else VaultBorder),
                             onClick = { pathInput = path },
                             modifier = Modifier.fillMaxWidth()
@@ -177,7 +177,7 @@ fun FolderPickerDialog(
                     },
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = VaultAccentCyan),
                     border = BorderStroke(1.dp, VaultAccentCyan.copy(alpha = 0.5f)),
-                    shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(0.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(Icons.Default.AutoFixHigh, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -205,6 +205,6 @@ fun FolderPickerDialog(
             }
         },
         containerColor = VaultSurface,
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(0.dp)
     )
 }

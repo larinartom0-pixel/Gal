@@ -129,7 +129,7 @@ fun DuplicateDetectorView(
             Surface(
                 color = VaultSurface,
                 border = BorderStroke(1.dp, if (isDetecting) VaultAccentAmber else VaultBorder),
-                shape = RoundedCornerShape(18.dp),
+                shape = RoundedCornerShape(0.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -144,7 +144,7 @@ fun DuplicateDetectorView(
                     ) {
                         Surface(
                             color = VaultAccentCyan.copy(alpha = 0.15f),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(0.dp),
                             border = BorderStroke(1.dp, VaultAccentCyan.copy(alpha = 0.35f)),
                             modifier = Modifier.size(42.dp)
                         ) {
@@ -186,7 +186,7 @@ fun DuplicateDetectorView(
                     ) {
                         Surface(
                             color = VaultPrimary.copy(alpha = 0.16f),
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(0.dp),
                             border = BorderStroke(1.dp, VaultPrimary.copy(alpha = 0.4f)),
                             modifier = Modifier.weight(1f)
                         ) {
@@ -214,7 +214,7 @@ fun DuplicateDetectorView(
 
                         Surface(
                             color = VaultSurfaceElevated,
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(0.dp),
                             border = BorderStroke(1.dp, VaultBorderSubtle),
                             modifier = Modifier
                                 .weight(1f)
@@ -249,88 +249,35 @@ fun DuplicateDetectorView(
                         }
                     }
 
-                    // Row 3: Clean Segmented Mode Selector (Deep Frame Scan vs Fast Hash)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(VaultBackground)
-                            .border(1.dp, VaultBorderSubtle, RoundedCornerShape(12.dp))
-                            .padding(3.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    // Row 3: Flexible Matching Algorithm Banner
+                    Surface(
+                        shape = RoundedCornerShape(0.dp),
+                        color = VaultSurfaceElevated,
+                        border = BorderStroke(1.dp, VaultPrimary.copy(alpha = 0.35f)),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        val isDeep = detectionMode == DetectionMode.DEEP_FRAME_SCAN
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(9.dp))
-                                .background(if (isDeep) VaultPrimary.copy(alpha = 0.25f) else Color.Transparent)
-                                .border(
-                                    width = 1.dp,
-                                    color = if (isDeep) VaultPrimary else Color.Transparent,
-                                    shape = RoundedCornerShape(9.dp)
-                                )
-                                .clickable(enabled = !isDetecting) {
-                                    viewModel.setDetectionMode(DetectionMode.DEEP_FRAME_SCAN)
-                                }
-                                .padding(vertical = 8.dp, horizontal = 6.dp),
-                            contentAlignment = Alignment.Center
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.AutoFixHigh,
-                                    contentDescription = null,
-                                    tint = if (isDeep) VaultPrimaryLight else VaultTextSecondary,
-                                    modifier = Modifier.size(14.dp)
+                            Icon(
+                                imageVector = Icons.Default.AutoFixHigh,
+                                contentDescription = null,
+                                tint = VaultPrimaryLight,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "Гнучкий алгоритм пошуку дублікатів",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = VaultPrimaryLight
                                 )
                                 Text(
-                                    text = "Розумний (кадри)",
-                                    fontSize = 11.sp,
-                                    fontWeight = if (isDeep) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isDeep) VaultPrimaryLight else VaultTextSecondary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-
-                        val isFast = detectionMode == DetectionMode.FAST_HASH_ONLY
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(9.dp))
-                                .background(if (isFast) VaultAccentCyan.copy(alpha = 0.2f) else Color.Transparent)
-                                .border(
-                                    width = 1.dp,
-                                    color = if (isFast) VaultAccentCyan else Color.Transparent,
-                                    shape = RoundedCornerShape(9.dp)
-                                )
-                                .clickable(enabled = !isDetecting) {
-                                    viewModel.setDetectionMode(DetectionMode.FAST_HASH_ONLY)
-                                }
-                                .padding(vertical = 8.dp, horizontal = 6.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Bolt,
-                                    contentDescription = null,
-                                    tint = if (isFast) VaultAccentCyan else VaultTextSecondary,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Text(
-                                    text = "Швидкий (хеші)",
-                                    fontSize = 11.sp,
-                                    fontWeight = if (isFast) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isFast) VaultAccentCyan else VaultTextSecondary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    text = "Порівняння за назвою, розміром (±2%) та роздільною здатністю",
+                                    fontSize = 10.sp,
+                                    color = VaultTextSecondary
                                 )
                             }
                         }
@@ -346,7 +293,7 @@ fun DuplicateDetectorView(
                             disabledContainerColor = VaultAccentAmber.copy(alpha = 0.22f),
                             disabledContentColor = VaultAccentAmber
                         ),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(0.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(46.dp)
@@ -390,7 +337,7 @@ fun DuplicateDetectorView(
         item(key = "telemetry_verdict_card") {
             Surface(
                 color = VaultSurface,
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(0.dp),
                 border = BorderStroke(
                     width = if (isDetecting) 1.5.dp else 1.dp,
                     color = if (isDetecting) VaultAccentAmber else VaultAccentCyan.copy(alpha = 0.45f)
@@ -411,7 +358,7 @@ fun DuplicateDetectorView(
                         // Left Box: Time Remaining for Verdict
                         Surface(
                             color = if (isDetecting) VaultAccentAmber.copy(alpha = 0.15f) else VaultSurfaceElevated,
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(0.dp),
                             border = BorderStroke(
                                 1.dp,
                                 if (isDetecting) VaultAccentAmber.copy(alpha = 0.6f) else VaultBorderSubtle
@@ -460,7 +407,7 @@ fun DuplicateDetectorView(
                         // Right Box: Elapsed Scan Duration ("ЧАС ПЕРЕВІРКИ")
                         Surface(
                             color = VaultAccentCyan.copy(alpha = 0.12f),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(0.dp),
                             border = BorderStroke(1.dp, VaultAccentCyan.copy(alpha = 0.45f)),
                             modifier = Modifier.weight(1f)
                         ) {
@@ -511,7 +458,7 @@ fun DuplicateDetectorView(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(7.dp)
-                            .clip(RoundedCornerShape(4.dp)),
+                            .clip(RoundedCornerShape(0.dp)),
                         color = if (isDetecting) VaultAccentAmber else VaultAccentCyan,
                         trackColor = VaultSurfaceElevated
                     )
@@ -566,7 +513,7 @@ fun DuplicateDetectorView(
             item(key = "duplicate_summary_card") {
                 Surface(
                     color = VaultSurface,
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(0.dp),
                     border = BorderStroke(1.dp, VaultBorder),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -580,7 +527,7 @@ fun DuplicateDetectorView(
                         ) {
                             Surface(
                                 color = VaultErrorContainer.copy(alpha = 0.35f),
-                                shape = RoundedCornerShape(12.dp),
+                                shape = RoundedCornerShape(0.dp),
                                 border = BorderStroke(1.dp, VaultError.copy(alpha = 0.3f)),
                                 modifier = Modifier.weight(1f)
                             ) {
@@ -607,7 +554,7 @@ fun DuplicateDetectorView(
 
                             Surface(
                                 color = VaultPrimaryDark.copy(alpha = 0.25f),
-                                shape = RoundedCornerShape(12.dp),
+                                shape = RoundedCornerShape(0.dp),
                                 border = BorderStroke(1.dp, VaultPrimary.copy(alpha = 0.3f)),
                                 modifier = Modifier.weight(1f)
                             ) {
@@ -642,7 +589,7 @@ fun DuplicateDetectorView(
                                     containerColor = VaultError,
                                     contentColor = Color.White
                                 ),
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(0.dp),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                                 modifier = Modifier
                                     .weight(1f)
@@ -666,7 +613,7 @@ fun DuplicateDetectorView(
                                 },
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = VaultPrimaryLight),
                                 border = BorderStroke(1.dp, VaultPrimary.copy(alpha = 0.5f)),
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(0.dp),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                                 modifier = Modifier
                                     .weight(1f)
@@ -693,7 +640,7 @@ fun DuplicateDetectorView(
             item(key = "empty_or_scanning_state") {
                 Surface(
                     color = VaultSurface,
-                    shape = RoundedCornerShape(18.dp),
+                    shape = RoundedCornerShape(0.dp),
                     border = BorderStroke(1.dp, VaultBorder),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -706,7 +653,7 @@ fun DuplicateDetectorView(
                     ) {
                         Surface(
                             color = VaultSurfaceElevated,
-                            shape = CircleShape,
+                            shape = RoundedCornerShape(0.dp),
                             border = BorderStroke(1.dp, VaultBorder),
                             modifier = Modifier.size(64.dp)
                         ) {
@@ -750,7 +697,7 @@ fun DuplicateDetectorView(
                                 onClick = onSelectFolderClick,
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = VaultPrimaryLight),
                                 border = BorderStroke(1.dp, VaultBorder),
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(0.dp),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                                 modifier = Modifier.weight(1f)
                             ) {
@@ -770,7 +717,7 @@ fun DuplicateDetectorView(
                                     containerColor = VaultAccentCyan.copy(alpha = 0.18f),
                                     contentColor = VaultAccentCyan
                                 ),
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(0.dp),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                                 modifier = Modifier.weight(1f)
                             ) {
@@ -890,7 +837,7 @@ fun DuplicateDetectorView(
                 }
             },
             containerColor = VaultSurface,
-            shape = RoundedCornerShape(16.dp)
+            shape = RoundedCornerShape(0.dp)
         )
     }
 
@@ -968,7 +915,7 @@ fun DuplicateDetectorView(
                 }
             },
             containerColor = VaultSurface,
-            shape = RoundedCornerShape(16.dp)
+            shape = RoundedCornerShape(0.dp)
         )
     }
 
@@ -1024,7 +971,7 @@ fun DuplicateDetectorView(
                 }
             },
             containerColor = VaultSurface,
-            shape = RoundedCornerShape(16.dp)
+            shape = RoundedCornerShape(0.dp)
         )
     }
 
@@ -1058,7 +1005,7 @@ fun DuplicateDetectorView(
                 }
             },
             containerColor = VaultSurface,
-            shape = RoundedCornerShape(16.dp)
+            shape = RoundedCornerShape(0.dp)
         )
     }
 
@@ -1092,7 +1039,7 @@ fun DuplicateDetectorView(
                 }
             },
             containerColor = VaultSurface,
-            shape = RoundedCornerShape(16.dp)
+            shape = RoundedCornerShape(0.dp)
         )
     }
 
@@ -1126,7 +1073,7 @@ fun DuplicateDetectorView(
                 }
             },
             containerColor = VaultSurface,
-            shape = RoundedCornerShape(16.dp)
+            shape = RoundedCornerShape(0.dp)
         )
     }
 }
@@ -1146,6 +1093,9 @@ fun DuplicateGroupCard(
 
     val matchBadgeColor = when (group.matchType) {
         DuplicateMatchType.EXACT_CONTENT -> VaultAccentCyan
+        DuplicateMatchType.FLEXIBLE_NAME_SIZE -> VaultPrimaryLight
+        DuplicateMatchType.SIZE_AND_DURATION -> VaultAccentGreen
+        DuplicateMatchType.RESOLUTION_NAME -> VaultAccentAmber
         DuplicateMatchType.VISUAL_CLONE -> VaultPrimaryLight
         DuplicateMatchType.MODIFIED_VIDEO -> VaultAccentAmber
         DuplicateMatchType.FRAME_SIMILARITY -> VaultPrimary
@@ -1153,6 +1103,9 @@ fun DuplicateGroupCard(
 
     val matchBadgeText = when (group.matchType) {
         DuplicateMatchType.EXACT_CONTENT -> strings.matchTypeExact
+        DuplicateMatchType.FLEXIBLE_NAME_SIZE -> "Назва + Розмір"
+        DuplicateMatchType.SIZE_AND_DURATION -> "Розмір + Хронометраж"
+        DuplicateMatchType.RESOLUTION_NAME -> "Роздільність + Назва"
         DuplicateMatchType.VISUAL_CLONE -> "${strings.matchTypeVisual} • ${group.similarityScore}%"
         DuplicateMatchType.MODIFIED_VIDEO -> "${strings.matchTypeModified} • ${group.similarityScore}%"
         DuplicateMatchType.FRAME_SIMILARITY -> "Збіг кадрів • ${group.similarityScore}%"
@@ -1161,7 +1114,7 @@ fun DuplicateGroupCard(
     Surface(
         color = VaultSurface,
         border = BorderStroke(1.dp, VaultBorder),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(0.dp),
         modifier = modifier.fillMaxWidth()
     ) {
         Column(
@@ -1181,7 +1134,7 @@ fun DuplicateGroupCard(
                 ) {
                     Surface(
                         color = VaultPrimary.copy(alpha = 0.2f),
-                        shape = RoundedCornerShape(6.dp)
+                        shape = RoundedCornerShape(0.dp)
                     ) {
                         Text(
                             text = "#$groupIndex",
@@ -1205,7 +1158,7 @@ fun DuplicateGroupCard(
                 if (group.wastedBytes > 0) {
                     Surface(
                         color = VaultError.copy(alpha = 0.15f),
-                        shape = RoundedCornerShape(6.dp),
+                        shape = RoundedCornerShape(0.dp),
                         border = BorderStroke(1.dp, VaultError.copy(alpha = 0.35f))
                     ) {
                         Text(
@@ -1228,7 +1181,7 @@ fun DuplicateGroupCard(
             ) {
                 Surface(
                     color = matchBadgeColor.copy(alpha = 0.15f),
-                    shape = RoundedCornerShape(6.dp),
+                    shape = RoundedCornerShape(0.dp),
                     border = BorderStroke(0.8.dp, matchBadgeColor.copy(alpha = 0.45f))
                 ) {
                     Text(
@@ -1261,7 +1214,7 @@ fun DuplicateGroupCard(
                     onClick = onKeepOnlyOne,
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = VaultError),
                     border = BorderStroke(1.dp, VaultError.copy(alpha = 0.4f)),
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(0.dp),
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                     modifier = Modifier.weight(1f)
                 ) {
@@ -1280,7 +1233,7 @@ fun DuplicateGroupCard(
                     onClick = onRenameGroup,
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = VaultPrimaryLight),
                     border = BorderStroke(1.dp, VaultPrimary.copy(alpha = 0.5f)),
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(0.dp),
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                     modifier = Modifier.weight(1f)
                 ) {
@@ -1329,7 +1282,7 @@ fun DuplicateItemRow(
     val strings = LocalAppStrings.current
     Surface(
         color = if (isMaster) VaultSurfaceElevated else VaultBackground,
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(0.dp),
         border = BorderStroke(1.dp, if (isMaster) VaultPrimary.copy(alpha = 0.4f) else VaultBorder.copy(alpha = 0.6f)),
         modifier = modifier.fillMaxWidth()
     ) {
@@ -1344,7 +1297,7 @@ fun DuplicateItemRow(
             Box(
                 modifier = Modifier
                     .size(width = 68.dp, height = 50.dp)
-                    .clip(RoundedCornerShape(6.dp))
+                    .clip(RoundedCornerShape(0.dp))
                     .clickable { onOpen() },
                 contentAlignment = Alignment.Center
             ) {
@@ -1355,13 +1308,13 @@ fun DuplicateItemRow(
                     contentDescription = item.name,
                     showPlayOverlay = true,
                     playIconSize = 14.dp,
-                    cornerRadius = 6.dp,
+                    cornerRadius = 0.dp,
                     modifier = Modifier.fillMaxSize()
                 )
 
                 Surface(
                     color = if (isMaster) VaultPrimary.copy(alpha = 0.9f) else Color.Black.copy(alpha = 0.75f),
-                    shape = RoundedCornerShape(topStart = 4.dp, bottomEnd = 4.dp),
+                    shape = RoundedCornerShape(0.dp),
                     modifier = Modifier.align(Alignment.TopStart)
                 ) {
                     Text(
@@ -1412,7 +1365,7 @@ fun DuplicateItemRow(
                     if (isMaster) {
                         Surface(
                             color = VaultPrimary.copy(alpha = 0.18f),
-                            shape = RoundedCornerShape(4.dp)
+                            shape = RoundedCornerShape(0.dp)
                         ) {
                             Text(
                                 text = "Оригінал",

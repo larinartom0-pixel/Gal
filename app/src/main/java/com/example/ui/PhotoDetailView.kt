@@ -219,7 +219,7 @@ fun PhotoDetailView(
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Surface(
-                                shape = RoundedCornerShape(4.dp),
+                                shape = RoundedCornerShape(0.dp),
                                 color = VaultPrimary.copy(alpha = 0.2f),
                                 border = androidx.compose.foundation.BorderStroke(0.5.dp, VaultPrimary.copy(alpha = 0.4f))
                             ) {
@@ -265,7 +265,7 @@ fun PhotoDetailView(
                 .padding(bottom = 20.dp)
         ) {
             Surface(
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(0.dp),
                 color = VaultSurfaceElevated.copy(alpha = 0.85f),
                 border = androidx.compose.foundation.BorderStroke(1.dp, VaultBorderSubtle)
             ) {

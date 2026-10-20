@@ -122,11 +122,11 @@ fun RoToyIntroScreen(
                 .padding(top = 16.dp, end = 16.dp)
         ) {
             Surface(
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(0.dp),
                 color = VaultSurfaceElevated.copy(alpha = 0.85f),
                 border = BorderStroke(1.dp, VaultBorderSubtle),
                 modifier = Modifier
-                    .clip(RoundedCornerShape(20.dp))
+                    .clip(RoundedCornerShape(0.dp))
                     .clickable { onSkip() }
                     .testTag("intro_skip_button")
             ) {
@@ -161,7 +161,7 @@ fun RoToyIntroScreen(
         ) {
             // Elegant App Shield Icon
             Surface(
-                shape = RoundedCornerShape(22.dp),
+                shape = RoundedCornerShape(0.dp),
                 color = VaultPrimary.copy(alpha = 0.15f),
                 border = BorderStroke(1.5.dp, VaultPrimaryLight.copy(alpha = 0.6f)),
                 modifier = Modifier.size(76.dp)
@@ -216,7 +216,7 @@ fun RoToyIntroScreen(
 
             // LICENSE CARD: GNU General Public License v3
             Surface(
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(0.dp),
                 color = VaultSurfaceElevated.copy(alpha = 0.7f),
                 border = BorderStroke(1.dp, VaultBorderSubtle),
                 modifier = Modifier.fillMaxWidth(0.92f)
@@ -229,7 +229,7 @@ fun RoToyIntroScreen(
                     Box(
                         modifier = Modifier
                             .size(32.dp)
-                            .clip(CircleShape)
+                            .clip(RoundedCornerShape(0.dp))
                             .background(VaultAccentCyan.copy(alpha = 0.15f)),
                         contentAlignment = Alignment.Center
                     ) {
@@ -268,7 +268,7 @@ fun RoToyIntroScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Surface(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(0.dp),
                 color = VaultSurfaceHighlight.copy(alpha = 0.35f),
                 border = BorderStroke(1.dp, VaultBorderSubtle)
             ) {
@@ -299,7 +299,7 @@ fun RoToyIntroScreen(
                 modifier = Modifier
                     .fillMaxWidth(0.35f)
                     .height(2.5.dp)
-                    .clip(RoundedCornerShape(2.dp)),
+                    .clip(RoundedCornerShape(0.dp)),
                 color = VaultPrimary,
                 trackColor = VaultSurfaceElevated
             )
