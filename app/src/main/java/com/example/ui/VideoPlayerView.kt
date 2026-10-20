@@ -44,8 +44,10 @@ import androidx.media3.ui.PlayerView
 import com.example.data.HiddenMedia
 import com.example.ui.i18n.LocalAppStrings
 import com.example.ui.theme.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.Locale
 
@@ -90,6 +92,7 @@ fun VideoPlayerView(
     var isUserSeeking by remember { mutableStateOf(false) }
     var seekSliderPos by remember { mutableFloatStateOf(0f) }
     var showSpeedDialog by remember { mutableStateOf(false) }
+    val seekSignal = remember { Channel<Unit>(Channel.CONFLATED) }
 
     // Quick on-screen feedback (play/pause, speed/reverse, or ±10s seek)
     var actionFeedback by remember { mutableStateOf<Pair<ImageVector, String>?>(null) }
@@ -132,7 +135,9 @@ fun VideoPlayerView(
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     when (playbackState) {
                         Player.STATE_BUFFERING -> {
-                            isBuffering = true
+                            if (speed >= 0f) {
+                                isBuffering = true
+                            }
                         }
                         Player.STATE_READY -> {
                             isBuffering = false
@@ -140,6 +145,7 @@ fun VideoPlayerView(
                             if (speed > 0f) {
                                 isPlaybackActive = this@apply.isPlaying
                             }
+                            seekSignal.trySend(Unit)
                         }
                         Player.STATE_ENDED -> {
                             isBuffering = false
@@ -212,32 +218,65 @@ fun VideoPlayerView(
         }
     }
 
-    // Reverse Playback Coroutine Engine (smoothly seeks backwards frame by frame)
+    // Reverse Playback Coroutine Engine (smoothly seeks backwards frame by frame with decode pacing)
     LaunchedEffect(speed, isPlaybackActive, loopVideo, duration, exoPlayer) {
         if (speed < 0f && isPlaybackActive) {
             val player = exoPlayer ?: return@LaunchedEffect
             player.pause()
             player.volume = 0f
 
-            // If at beginning, auto jump to the end of the video to play backwards
-            if (player.currentPosition <= 50L && duration > 0L) {
+            // If at beginning or close to 0, auto jump to the end of the video to play backwards
+            var currentReversePos = player.currentPosition
+            if (currentReversePos <= 100L && duration > 0L) {
+                currentReversePos = duration
                 player.seekTo(duration)
                 currentPos = duration
+                withTimeoutOrNull(250L) {
+                    seekSignal.receive()
+                }
             }
 
-            val absSpeed = kotlin.math.abs(speed)
-            val tickIntervalMs = 65L
-            val stepMs = (tickIntervalMs * absSpeed).toLong().coerceAtLeast(30L)
+            val absSpeed = kotlin.math.abs(speed).coerceIn(0.25f, 4.0f)
+
+            // Pacing delay: allows each decoded frame to be rendered and viewed on screen
+            // without being cancelled or dropped by rapid subsequent seeks.
+            val pacingDelayMs = when {
+                absSpeed <= 0.5f -> 80L
+                absSpeed <= 1.0f -> 60L
+                absSpeed <= 2.0f -> 50L
+                else -> 40L
+            }
 
             while (isActive && isPlaybackActive && speed < 0f) {
-                val startMs = System.currentTimeMillis()
-                val cur = player.currentPosition
-                val nextPos = cur - stepMs
+                if (isUserSeeking) {
+                    currentReversePos = currentPos
+                    delay(50)
+                    continue
+                }
+
+                // If user jumped via double tap (+/-10s) or external seek
+                if (kotlin.math.abs(currentReversePos - player.currentPosition) > 1500L) {
+                    currentReversePos = player.currentPosition
+                }
+
+                // Drain any old seek signal before initiating new seek
+                while (seekSignal.tryReceive().isSuccess) { /* drain */ }
+
+                // Dynamic step based on cycle duration (pacing + decode time) to maintain real-time speed
+                val nominalCycleMs = pacingDelayMs + 40L
+                val stepMs = (nominalCycleMs * absSpeed).toLong().coerceAtLeast(35L)
+                val nextPos = currentReversePos - stepMs
 
                 if (nextPos <= 0L) {
                     if (loopVideo && duration > 0L) {
+                        currentReversePos = duration
                         player.seekTo(duration)
                         currentPos = duration
+                        withTimeoutOrNull(250L) {
+                            seekSignal.receive()
+                        }
+                        delay(pacingDelayMs)
+                        continue
                     } else {
                         player.seekTo(0L)
                         currentPos = 0L
@@ -245,13 +284,19 @@ fun VideoPlayerView(
                         break
                     }
                 } else {
+                    currentReversePos = nextPos
                     player.seekTo(nextPos)
                     currentPos = nextPos
-                }
 
-                val elapsed = System.currentTimeMillis() - startMs
-                val waitMs = (tickIntervalMs - elapsed).coerceIn(15L, 100L)
-                delay(waitMs)
+                    // Wait for ExoPlayer to signal STATE_READY (frame rendered)
+                    // with a tight timeout so it never blocks or hangs
+                    withTimeoutOrNull(100L) {
+                        seekSignal.receive()
+                    }
+
+                    // Pacing delay so the frame is perceived smoothly
+                    delay(pacingDelayMs)
+                }
             }
         }
     }
@@ -483,8 +528,8 @@ fun VideoPlayerView(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Buffering indicator
-                if (isBuffering) {
+                // Buffering indicator (only shown for forward playback or initial load)
+                if (isBuffering && speed >= 0f) {
                     Surface(
                         shape = RoundedCornerShape(0.dp),
                         color = VaultSurfaceElevated.copy(alpha = 0.9f),
