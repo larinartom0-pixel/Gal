@@ -3,6 +3,7 @@ package com.example.data
 import android.content.Context
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
+import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -83,8 +84,11 @@ object VideoThumbnailManager {
 
             for (fraction in candidateFractions) {
                 val timeUs = (durationUs * fraction).toLong().coerceAtLeast(0L)
-                val frame = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                    ?: retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_PREVIOUS_SYNC)
+                val frame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                    retriever.getScaledFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST, 512, 512)
+                } else {
+                    retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST)
+                }
                 
                 if (frame != null) {
                     val blackRatio = calculateBlackPixelRatio(frame)
@@ -108,7 +112,11 @@ object VideoThumbnailManager {
 
             // Fallback: if all candidate checks failed, try frame at time 0
             if (bestBitmap == null) {
-                bestBitmap = retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                bestBitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                    retriever.getScaledFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST, 512, 512)
+                } else {
+                    retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST)
+                }
             }
 
             if (bestBitmap != null) {

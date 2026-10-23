@@ -5,6 +5,7 @@ import android.view.ViewGroup
 import androidx.annotation.OptIn
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -45,9 +46,17 @@ import androidx.media3.ui.PlayerView
 import com.example.data.HiddenMedia
 import com.example.ui.i18n.LocalAppStrings
 import com.example.ui.theme.*
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
+import android.os.Build
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.Locale
@@ -94,6 +103,19 @@ fun VideoPlayerView(
     var seekSliderPos by remember { mutableFloatStateOf(0f) }
     var showSpeedDialog by remember { mutableStateOf(false) }
     val seekSignal = remember { Channel<Unit>(Channel.CONFLATED) }
+
+    // MediaMetadataRetriever for extracting scaled frames during reverse playback
+    var reverseFrameBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var viewportWidthPx by remember { mutableIntStateOf(0) }
+    var viewportHeightPx by remember { mutableIntStateOf(0) }
+
+    val frameRetriever = remember(media.id, media.internalPath) {
+        MediaMetadataRetriever().apply {
+            try {
+                setDataSource(media.internalPath)
+            } catch (_: Exception) {}
+        }
+    }
 
     // Quick on-screen feedback (play/pause, speed/reverse, or ±10s seek)
     var actionFeedback by remember { mutableStateOf<Pair<ImageVector, String>?>(null) }
@@ -182,6 +204,9 @@ fun VideoPlayerView(
             if (exoPlayer === player) {
                 exoPlayer = null
             }
+            try {
+                frameRetriever.release()
+            } catch (_: Exception) {}
         }
     }
 
@@ -189,6 +214,7 @@ fun VideoPlayerView(
     LaunchedEffect(speed, exoPlayer) {
         exoPlayer?.let { player ->
             if (speed > 0f) {
+                reverseFrameBitmap = null
                 player.setSeekParameters(SeekParameters.DEFAULT)
                 player.volume = 1f
                 try {
@@ -196,12 +222,11 @@ fun VideoPlayerView(
                 } catch (_: Exception) {
                     player.playbackParameters = PlaybackParameters(1.0f)
                 }
+                player.seekTo(currentPos)
                 if (isPlaybackActive && !player.isPlaying) {
                     player.play()
                 }
             } else {
-                // In reverse mode, optimize seek parameters to reduce decoder workload
-                player.setSeekParameters(SeekParameters(150_000L, 150_000L))
                 player.pause()
                 player.volume = 0f
             }
@@ -223,38 +248,32 @@ fun VideoPlayerView(
         }
     }
 
-    // Reverse Playback Coroutine Engine (smoothly seeks backwards frame by frame with decode pacing)
-    LaunchedEffect(speed, isPlaybackActive, loopVideo, duration, exoPlayer) {
+    // Reverse Playback Coroutine Engine (extracts frames via MediaMetadataRetriever.getScaledFrameAtTime)
+    LaunchedEffect(speed, isPlaybackActive, loopVideo, duration, exoPlayer, viewportWidthPx, viewportHeightPx) {
         if (speed < 0f && isPlaybackActive) {
             val player = exoPlayer ?: return@LaunchedEffect
             player.pause()
             player.volume = 0f
-            player.setSeekParameters(SeekParameters(150_000L, 150_000L))
 
             // If at beginning or close to 0, auto jump to the end of the video to play backwards
             var currentReversePos = player.currentPosition
             if (currentReversePos <= 150L && duration > 0L) {
                 currentReversePos = duration
-                player.seekTo(duration)
                 currentPos = duration
-                withTimeoutOrNull(300L) {
-                    seekSignal.receive()
-                }
             }
 
             val absSpeed = kotlin.math.abs(speed).coerceIn(0.25f, 4.0f)
 
-            // Pacing delay: allows each decoded frame to be rendered and viewed on screen
-            // without being cancelled or dropped by rapid subsequent seeks.
-            // 90ms at 1.0x provides a steady, fluid ~6-8 fps reverse playback that mobile decoders can easily sustain.
+            // Pacing delay: allows each decoded frame to be rendered and viewed on screen.
+            // 80ms at 1.0x provides a steady, fluid ~8-10 fps reverse playback.
             val pacingDelayMs = when {
-                absSpeed <= 0.5f -> 120L
-                absSpeed <= 1.0f -> 90L
-                absSpeed <= 2.0f -> 70L
-                else -> 50L
+                absSpeed <= 0.5f -> 100L
+                absSpeed <= 1.0f -> 80L
+                absSpeed <= 2.0f -> 60L
+                else -> 40L
             }
 
-            var lastCycleDurationMs = pacingDelayMs + 50L
+            var lastCycleDurationMs = pacingDelayMs + 30L
 
             while (isActive && isPlaybackActive && speed < 0f) {
                 if (isUserSeeking) {
@@ -269,23 +288,17 @@ fun VideoPlayerView(
                 }
 
                 // Calculate next target position based on actual time elapsed in previous cycle
-                // to maintain an exact real-time playback speed
-                val stepMs = (lastCycleDurationMs * absSpeed).toLong().coerceIn(60L, 600L)
+                val stepMs = (lastCycleDurationMs * absSpeed).toLong().coerceIn(50L, 500L)
                 val nextPos = currentReversePos - stepMs
 
                 if (nextPos <= 0L) {
                     if (loopVideo && duration > 0L) {
                         currentReversePos = duration
-                        player.seekTo(duration)
                         currentPos = duration
-                        withTimeoutOrNull(300L) {
-                            seekSignal.receive()
-                        }
                         delay(pacingDelayMs)
-                        lastCycleDurationMs = pacingDelayMs + 50L
+                        lastCycleDurationMs = pacingDelayMs + 30L
                         continue
                     } else {
-                        player.seekTo(0L)
                         currentPos = 0L
                         isPlaybackActive = false
                         break
@@ -293,23 +306,47 @@ fun VideoPlayerView(
                 } else {
                     val cycleStart = System.currentTimeMillis()
 
-                    // Drain any stale seek signals
-                    while (seekSignal.tryReceive().isSuccess) { /* drain */ }
-
                     currentReversePos = nextPos
-                    player.seekTo(nextPos)
                     currentPos = nextPos
 
-                    // Wait for ExoPlayer to signal STATE_READY (frame rendered)
-                    // with a generous timeout (280ms) so the hardware decoder is NEVER aborted
-                    withTimeoutOrNull(280L) {
-                        seekSignal.receive()
+                    // Retrieve frame using MediaMetadataRetriever.getScaledFrameAtTime:
+                    // 1. Scaled to ImageView/viewport dimensions (width and height)
+                    // 2. OPTION_CLOSEST so frames do not jump
+                    // 3. Time properly converted to microseconds (timeMs * 1000L)
+                    val targetWidth = if (viewportWidthPx > 0) viewportWidthPx else 1080
+                    val targetHeight = if (viewportHeightPx > 0) viewportHeightPx else 1920
+                    val timeUs = nextPos.coerceAtLeast(0L) * 1000L
+
+                    val frameBitmap = withContext(Dispatchers.IO) {
+                        try {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                                frameRetriever.getScaledFrameAtTime(
+                                    timeUs,
+                                    MediaMetadataRetriever.OPTION_CLOSEST,
+                                    targetWidth,
+                                    targetHeight
+                                )
+                            } else {
+                                frameRetriever.getFrameAtTime(
+                                    timeUs,
+                                    MediaMetadataRetriever.OPTION_CLOSEST
+                                )?.let { raw ->
+                                    Bitmap.createScaledBitmap(raw, targetWidth, targetHeight, true)
+                                }
+                            }
+                        } catch (_: Exception) {
+                            null
+                        }
+                    }
+
+                    if (frameBitmap != null) {
+                        reverseFrameBitmap = frameBitmap
                     }
 
                     // Pacing delay so the frame is perceived smoothly
                     delay(pacingDelayMs)
 
-                    lastCycleDurationMs = (System.currentTimeMillis() - cycleStart).coerceIn(60L, 500L)
+                    lastCycleDurationMs = (System.currentTimeMillis() - cycleStart).coerceIn(40L, 400L)
                 }
             }
         }
@@ -488,6 +525,12 @@ fun VideoPlayerView(
                     .weight(1f)
                     .fillMaxWidth()
                     .background(Color.Black)
+                    .onSizeChanged { size ->
+                        if (size.width > 0 && size.height > 0) {
+                            viewportWidthPx = size.width
+                            viewportHeightPx = size.height
+                        }
+                    }
                     .pointerInput(Unit) {
                         detectTapGestures(
                             onTap = {
@@ -541,6 +584,18 @@ fun VideoPlayerView(
                     },
                     modifier = Modifier.fillMaxSize()
                 )
+
+                // Reverse Frame ImageView Layer (Displays frames retrieved via MediaMetadataRetriever.getScaledFrameAtTime)
+                if (speed < 0f && reverseFrameBitmap != null) {
+                    Image(
+                        bitmap = reverseFrameBitmap!!.asImageBitmap(),
+                        contentDescription = "Reverse Playback Frame",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .testTag("reverse_frame_image_view")
+                    )
+                }
 
                 // Buffering indicator (only shown for forward playback or initial load)
                 if (isBuffering && speed >= 0f) {
