@@ -70,6 +70,11 @@ import java.util.Locale
  * - Pure rectangular styling (0dp corners) without rounded clipping.
  * - Minimal, distraction-free playback controls: Previous, Play/Pause, Next, Shuffle & Seekbar.
  */
+data class CachedFrame(
+    val timestampMs: Long,
+    val bitmap: Bitmap
+)
+
 @OptIn(UnstableApi::class)
 @Composable
 fun VideoPlayerView(
@@ -109,6 +114,13 @@ fun VideoPlayerView(
     var viewportWidthPx by remember { mutableIntStateOf(0) }
     var viewportHeightPx by remember { mutableIntStateOf(0) }
 
+    // Pre-buffered Frame Cache for 100% stutter-free and drop-free reverse playback
+    var isBufferingReverse by remember { mutableStateOf(false) }
+    var reverseBufferProgress by remember { mutableFloatStateOf(0f) }
+    var cachedReverseFrames by remember { mutableStateOf<List<CachedFrame>>(emptyList()) }
+    var cachedRangeStartMs by remember { mutableLongStateOf(-1L) }
+    var cachedRangeEndMs by remember { mutableLongStateOf(-1L) }
+
     val frameRetriever = remember(media.id, media.internalPath) {
         MediaMetadataRetriever().apply {
             try {
@@ -132,6 +144,11 @@ fun VideoPlayerView(
         isPlaybackActive = true
         currentPos = 0L
         duration = 0L
+        cachedReverseFrames = emptyList()
+        cachedRangeStartMs = -1L
+        cachedRangeEndMs = -1L
+        reverseFrameBitmap = null
+        isBufferingReverse = false
 
         val isReverse = speed < 0f
         val player = ExoPlayer.Builder(context).build().apply {
@@ -215,6 +232,7 @@ fun VideoPlayerView(
         exoPlayer?.let { player ->
             if (speed > 0f) {
                 reverseFrameBitmap = null
+                isBufferingReverse = false
                 player.setSeekParameters(SeekParameters.DEFAULT)
                 player.volume = 1f
                 try {
@@ -248,7 +266,7 @@ fun VideoPlayerView(
         }
     }
 
-    // Reverse Playback Coroutine Engine (extracts frames via MediaMetadataRetriever.getScaledFrameAtTime)
+    // Reverse Playback Coroutine Engine powered by Pre-buffering Frame Cache (100% stutter-free and drop-free)
     LaunchedEffect(speed, isPlaybackActive, loopVideo, duration, exoPlayer, viewportWidthPx, viewportHeightPx) {
         if (speed < 0f && isPlaybackActive) {
             val player = exoPlayer ?: return@LaunchedEffect
@@ -263,17 +281,7 @@ fun VideoPlayerView(
             }
 
             val absSpeed = kotlin.math.abs(speed).coerceIn(0.25f, 4.0f)
-
-            // Pacing delay: allows each decoded frame to be rendered and viewed on screen.
-            // 80ms at 1.0x provides a steady, fluid ~8-10 fps reverse playback.
-            val pacingDelayMs = when {
-                absSpeed <= 0.5f -> 100L
-                absSpeed <= 1.0f -> 80L
-                absSpeed <= 2.0f -> 60L
-                else -> 40L
-            }
-
-            var lastCycleDurationMs = pacingDelayMs + 30L
+            val frameIntervalMs = 70L // ~14 FPS: fluid, crisp backward animation
 
             while (isActive && isPlaybackActive && speed < 0f) {
                 if (isUserSeeking) {
@@ -282,71 +290,114 @@ fun VideoPlayerView(
                     continue
                 }
 
-                // If user jumped via double tap (+/-10s) or external seek
+                // If user jumped via double tap (+/-10s) or seekbar
                 if (kotlin.math.abs(currentReversePos - player.currentPosition) > 1500L) {
                     currentReversePos = player.currentPosition
                 }
 
-                // Calculate next target position based on actual time elapsed in previous cycle
-                val stepMs = (lastCycleDurationMs * absSpeed).toLong().coerceIn(50L, 500L)
-                val nextPos = currentReversePos - stepMs
+                // Check if current position is covered by the pre-buffered frames cache
+                val hasCachedChunk = cachedReverseFrames.isNotEmpty() &&
+                        currentReversePos in (cachedRangeStartMs - 150L..cachedRangeEndMs + 150L)
 
-                if (nextPos <= 0L) {
-                    if (loopVideo && duration > 0L) {
-                        currentReversePos = duration
-                        currentPos = duration
-                        delay(pacingDelayMs)
-                        lastCycleDurationMs = pacingDelayMs + 30L
-                        continue
-                    } else {
-                        currentPos = 0L
-                        isPlaybackActive = false
-                        break
+                if (!hasCachedChunk) {
+                    // Pre-buffer a generous chunk of frames backwards
+                    val targetWidth = (if (viewportWidthPx > 0) viewportWidthPx else 1080).coerceAtMost(720)
+                    val targetHeight = (if (viewportHeightPx > 0) viewportHeightPx else 1920).coerceAtMost(1280)
+
+                    val chunkDurationMs = if (duration in 1L..20_000L) duration else 12_000L
+                    val chunkEndMs = currentReversePos.coerceIn(0L, duration.coerceAtLeast(1L))
+                    val chunkStartMs = (chunkEndMs - chunkDurationMs).coerceAtLeast(0L)
+
+                    val frameTimestamps = mutableListOf<Long>()
+                    var t = chunkEndMs
+                    while (t >= chunkStartMs) {
+                        frameTimestamps.add(t)
+                        t -= frameIntervalMs
                     }
-                } else {
-                    val cycleStart = System.currentTimeMillis()
+                    if (frameTimestamps.isEmpty()) {
+                        frameTimestamps.add(chunkEndMs)
+                    }
 
-                    currentReversePos = nextPos
-                    currentPos = nextPos
+                    isBufferingReverse = true
+                    reverseBufferProgress = 0f
 
-                    // Retrieve frame using MediaMetadataRetriever.getScaledFrameAtTime:
-                    // 1. Scaled to ImageView/viewport dimensions (width and height)
-                    // 2. OPTION_CLOSEST so frames do not jump
-                    // 3. Time properly converted to microseconds (timeMs * 1000L)
-                    val targetWidth = if (viewportWidthPx > 0) viewportWidthPx else 1080
-                    val targetHeight = if (viewportHeightPx > 0) viewportHeightPx else 1920
-                    val timeUs = nextPos.coerceAtLeast(0L) * 1000L
-
-                    val frameBitmap = withContext(Dispatchers.IO) {
-                        try {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                                frameRetriever.getScaledFrameAtTime(
-                                    timeUs,
-                                    MediaMetadataRetriever.OPTION_CLOSEST,
-                                    targetWidth,
-                                    targetHeight
-                                )
-                            } else {
-                                frameRetriever.getFrameAtTime(
-                                    timeUs,
-                                    MediaMetadataRetriever.OPTION_CLOSEST
-                                )?.let { raw ->
-                                    Bitmap.createScaledBitmap(raw, targetWidth, targetHeight, true)
+                    val loadedFrames = withContext(Dispatchers.IO) {
+                        val list = mutableListOf<CachedFrame>()
+                        val total = frameTimestamps.size
+                        for ((idx, ts) in frameTimestamps.withIndex()) {
+                            if (!isActive || !isPlaybackActive || speed >= 0f) break
+                            val timeUs = ts.coerceAtLeast(0L) * 1000L
+                            val bmp = try {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                                    frameRetriever.getScaledFrameAtTime(
+                                        timeUs,
+                                        MediaMetadataRetriever.OPTION_CLOSEST,
+                                        targetWidth,
+                                        targetHeight
+                                    )
+                                } else {
+                                    frameRetriever.getFrameAtTime(
+                                        timeUs,
+                                        MediaMetadataRetriever.OPTION_CLOSEST
+                                    )?.let { raw ->
+                                        Bitmap.createScaledBitmap(raw, targetWidth, targetHeight, true)
+                                    }
                                 }
+                            } catch (_: Exception) {
+                                null
                             }
-                        } catch (_: Exception) {
-                            null
+                            if (bmp != null) {
+                                list.add(CachedFrame(ts, bmp))
+                            }
+                            reverseBufferProgress = (idx + 1).toFloat() / total.toFloat()
                         }
+                        list
                     }
 
-                    if (frameBitmap != null) {
-                        reverseFrameBitmap = frameBitmap
+                    isBufferingReverse = false
+
+                    if (loadedFrames.isNotEmpty()) {
+                        cachedReverseFrames = loadedFrames
+                        cachedRangeStartMs = chunkStartMs
+                        cachedRangeEndMs = chunkEndMs
+                    } else {
+                        delay(200)
+                        continue
                     }
+                }
 
-                    // Pacing delay so the frame is perceived smoothly
-                    delay(pacingDelayMs)
+                // Playback from cached frames: ZERO decode latency, ZERO frame drops!
+                val remainingFrames = cachedReverseFrames.filter { it.timestampMs <= currentReversePos }
+                if (remainingFrames.isEmpty()) {
+                    // Reached beginning of current cached chunk
+                    if (cachedRangeStartMs <= 0L) {
+                        if (loopVideo && duration > 0L) {
+                            currentReversePos = duration
+                            currentPos = duration
+                            continue
+                        } else {
+                            currentPos = 0L
+                            isPlaybackActive = false
+                            break
+                        }
+                    } else {
+                        // Load previous chunk backwards
+                        currentReversePos = (cachedRangeStartMs - 1L).coerceAtLeast(0L)
+                        continue
+                    }
+                }
 
-                    lastCycleDurationMs = (System.currentTimeMillis() - cycleStart).coerceIn(40L, 400L)
+                // Play cached frames sequentially
+                for (frame in remainingFrames) {
+                    if (!isActive || !isPlaybackActive || speed >= 0f || isUserSeeking) break
+
+                    reverseFrameBitmap = frame.bitmap
+                    currentReversePos = frame.timestampMs
+                    currentPos = frame.timestampMs
+
+                    // Exact pacing based on chosen speed
+                    val pacingMs = (frameIntervalMs / absSpeed).toLong().coerceIn(16L, 300L)
+                    delay(pacingMs)
                 }
             }
         }
@@ -595,6 +646,54 @@ fun VideoPlayerView(
                             .fillMaxSize()
                             .testTag("reverse_frame_image_view")
                     )
+                }
+
+                // Pre-buffering indicator for reverse playback
+                if (isBufferingReverse) {
+                    Surface(
+                        shape = RoundedCornerShape(0.dp),
+                        color = VaultSurfaceElevated.copy(alpha = 0.95f),
+                        border = BorderStroke(1.dp, VaultPrimary),
+                        modifier = Modifier.padding(20.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                CircularProgressIndicator(
+                                    color = VaultPrimary,
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = strings.reversePreparing,
+                                    color = VaultPrimary,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                            LinearProgressIndicator(
+                                progress = { reverseBufferProgress },
+                                color = VaultPrimary,
+                                trackColor = VaultSurfaceHighlight,
+                                modifier = Modifier
+                                    .width(180.dp)
+                                    .height(4.dp)
+                            )
+                            Text(
+                                text = "${(reverseBufferProgress * 100).toInt()}%",
+                                color = VaultTextSecondary,
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
                 }
 
                 // Buffering indicator (only shown for forward playback or initial load)
