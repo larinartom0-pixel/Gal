@@ -54,13 +54,18 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Minimalist, high-performance Video Player powered by AndroidX Media3 ExoPlayer.
@@ -280,7 +285,7 @@ fun VideoPlayerView(
     }
 
     // Reverse Playback Coroutine Engine powered by Pre-buffering Frame Cache (100% stutter-free and drop-free)
-    // with real-time clock synchronization and automatic WebM / codec fallback to native ExoPlayer seek
+    // with real-time clock synchronization, multi-core parallel extraction, and WebM native seek fallback
     LaunchedEffect(speed, isPlaybackActive, loopVideo, duration, exoPlayer, viewportWidthPx, viewportHeightPx) {
         if (speed < 0f && isPlaybackActive) {
             val player = exoPlayer ?: return@LaunchedEffect
@@ -288,7 +293,7 @@ fun VideoPlayerView(
             player.volume = 0f
 
             // If at beginning or close to 0, auto jump to the end of the video to play backwards
-            var currentReversePos = player.currentPosition
+            var currentReversePos = currentPos
             if (currentReversePos <= 150L && duration > 0L) {
                 currentReversePos = duration
                 currentPos = duration
@@ -305,9 +310,9 @@ fun VideoPlayerView(
                     continue
                 }
 
-                // If user jumped via double tap (+/-10s) or seekbar
-                if (kotlin.math.abs(currentReversePos - player.currentPosition) > 1500L) {
-                    currentReversePos = player.currentPosition
+                // If user jumped via double tap (+/-10s) or seekbar (anchor synced via currentPos)
+                if (kotlin.math.abs(currentReversePos - currentPos) > 400L) {
+                    currentReversePos = currentPos
                 }
 
                 // If MediaMetadataRetriever cannot decode this file format (e.g. WebM VP8/VP9 on Stagefright),
@@ -325,6 +330,7 @@ fun VideoPlayerView(
                     if (currentReversePos <= 0L) {
                         if (loopVideo && duration > 0L) {
                             currentReversePos = duration
+                            currentPos = duration
                             player.seekTo(duration)
                         } else {
                             currentPos = 0L
@@ -343,12 +349,14 @@ fun VideoPlayerView(
                         currentReversePos in (cachedRangeStartMs - 150L..cachedRangeEndMs + 150L)
 
                 if (!hasCachedChunk) {
-                    // Pre-buffer a fast, compact 4-second chunk backwards (~50 frames at downscaled res)
-                    // Downscaled resolution decodes in ~1.0-1.5s total and keeps UI responsive
+                    // Maximum phone performance: multi-core parallel extraction
+                    // Downscaled dimensions for high decoding throughput and low RAM footprint
                     val targetWidth = (if (viewportWidthPx > 0) viewportWidthPx / 2 else 540).coerceIn(360, 640)
                     val targetHeight = (if (viewportHeightPx > 0) viewportHeightPx / 2 else 960).coerceIn(480, 960)
 
-                    val chunkDurationMs = if (duration in 1L..5_000L) duration else 4_000L
+                    // For short/medium videos (<= 35s), buffer the entire remaining video all at once!
+                    // For longer videos, buffer an expansive 18-second chunk.
+                    val chunkDurationMs = if (duration in 1L..35_000L) duration else 18_000L
                     val chunkEndMs = currentReversePos.coerceIn(0L, duration.coerceAtLeast(1L))
                     val chunkStartMs = (chunkEndMs - chunkDurationMs).coerceAtLeast(0L)
 
@@ -365,32 +373,56 @@ fun VideoPlayerView(
                     isBufferingReverse = true
                     reverseBufferProgress = 0f
 
-                    val loadedFrames = withContext(Dispatchers.IO) {
-                        val list = mutableListOf<CachedFrame>()
+                    val loadedFrames = withContext(Dispatchers.Default) {
                         val total = frameTimestamps.size
-                        for ((idx, ts) in frameTimestamps.withIndex()) {
-                            if (!isActive || !isPlaybackActive || speed >= 0f) break
-                            val timeUs = ts.coerceAtLeast(0L) * 1000L
-                            val bmp = extractScaledFrameWithFallback(
-                                frameRetriever,
-                                timeUs,
-                                targetWidth,
-                                targetHeight
-                            )
-                            if (bmp != null) {
-                                list.add(CachedFrame(ts, bmp))
-                            }
-                            reverseBufferProgress = (idx + 1).toFloat() / total.toFloat()
+                        val numCores = Runtime.getRuntime().availableProcessors().coerceIn(2, 6)
+                        val results = ConcurrentHashMap<Long, Bitmap>()
+                        val completedCount = AtomicInteger(0)
+
+                        coroutineScope {
+                            (0 until numCores).map { coreIndex ->
+                                async {
+                                    val workerRetriever = createWorkerRetriever(media.internalPath)
+                                    try {
+                                        for (idx in coreIndex until total step numCores) {
+                                            if (!isActive || !isPlaybackActive || speed >= 0f) break
+                                            val ts = frameTimestamps[idx]
+                                            val timeUs = ts.coerceAtLeast(0L) * 1000L
+                                            val bmp = extractScaledFrameWithFallback(
+                                                workerRetriever,
+                                                timeUs,
+                                                targetWidth,
+                                                targetHeight
+                                            )
+                                            if (bmp != null) {
+                                                results[ts] = bmp
+                                            }
+                                            val done = completedCount.incrementAndGet()
+                                            reverseBufferProgress = done.toFloat() / total.toFloat()
+                                        }
+                                    } finally {
+                                        try { workerRetriever.release() } catch (_: Exception) {}
+                                    }
+                                }
+                            }.awaitAll()
                         }
-                        list
+
+                        results.entries
+                            .sortedByDescending { it.key }
+                            .map { CachedFrame(it.key, it.value) }
                     }
 
                     isBufferingReverse = false
 
                     if (loadedFrames.isNotEmpty()) {
-                        cachedReverseFrames = loadedFrames
-                        cachedRangeStartMs = chunkStartMs
-                        cachedRangeEndMs = chunkEndMs
+                        // Merge into cumulative frame cache (up to 400 frames)
+                        val combined = (cachedReverseFrames + loadedFrames)
+                            .distinctBy { it.timestampMs }
+                            .sortedByDescending { it.timestampMs }
+                            .take(400)
+                        cachedReverseFrames = combined
+                        cachedRangeStartMs = if (cachedRangeStartMs >= 0L) minOf(cachedRangeStartMs, chunkStartMs) else chunkStartMs
+                        cachedRangeEndMs = if (cachedRangeEndMs >= 0L) maxOf(cachedRangeEndMs, chunkEndMs) else chunkEndMs
                     } else {
                         // MediaMetadataRetriever failed to extract frames for this format (e.g. WebM/VP8/VP9)
                         // Seamlessly switch to native ExoPlayer seek-reverse mode
@@ -402,8 +434,8 @@ fun VideoPlayerView(
                 // Playback from cached frames: Clock-synced pacing ensures true 1.0x real-time speed!
                 val remainingFrames = cachedReverseFrames.filter { it.timestampMs <= currentReversePos }
                 if (remainingFrames.isEmpty()) {
-                    // Reached beginning of current cached chunk
-                    if (cachedRangeStartMs <= 0L) {
+                    // Reached beginning of current cached chunk or video
+                    if (cachedRangeStartMs <= 0L || currentReversePos <= 100L) {
                         if (loopVideo && duration > 0L) {
                             currentReversePos = duration
                             currentPos = duration
@@ -416,6 +448,7 @@ fun VideoPlayerView(
                     } else {
                         // Load previous chunk backwards
                         currentReversePos = (cachedRangeStartMs - 1L).coerceAtLeast(0L)
+                        currentPos = currentReversePos
                         continue
                     }
                 }
@@ -426,6 +459,7 @@ fun VideoPlayerView(
 
                 for (frame in remainingFrames) {
                     if (!isActive || !isPlaybackActive || speed >= 0f || isUserSeeking) break
+                    if (kotlin.math.abs(currentReversePos - currentPos) > 400L) break // external jump
 
                     reverseFrameBitmap = frame.bitmap
                     currentReversePos = frame.timestampMs
@@ -645,7 +679,8 @@ fun VideoPlayerView(
                                 val isRight = offset.x > (size.width / 2)
                                 exoPlayer?.let { player ->
                                     val delta = if (isRight) 10000L else -10000L
-                                    val target = (player.currentPosition + delta).coerceIn(0L, duration.coerceAtLeast(1L))
+                                    val currentAnchor = if (speed < 0f) currentPos else player.currentPosition
+                                    val target = (currentAnchor + delta).coerceIn(0L, duration.coerceAtLeast(1L))
                                     player.seekTo(target)
                                     currentPos = target
                                     actionFeedback = (if (isRight) Icons.Default.Forward10 else Icons.Default.Replay10) to (if (isRight) "+10s" else "-10s")
@@ -1369,5 +1404,24 @@ private fun extractScaledFrameWithFallback(
 
     return null
 }
+
+/**
+ * Creates and initializes an isolated MediaMetadataRetriever instance for a parallel worker thread.
+ */
+private fun createWorkerRetriever(path: String): MediaMetadataRetriever {
+    return MediaMetadataRetriever().apply {
+        try {
+            setDataSource(path)
+        } catch (_: Exception) {
+            try {
+                val f = File(path)
+                if (f.exists()) {
+                    java.io.FileInputStream(f).use { fis -> setDataSource(fis.fd) }
+                }
+            } catch (_: Exception) {}
+        }
+    }
+}
+
 
 
