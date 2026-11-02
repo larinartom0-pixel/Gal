@@ -35,10 +35,13 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -46,26 +49,11 @@ import androidx.media3.ui.PlayerView
 import com.example.data.HiddenMedia
 import com.example.ui.i18n.LocalAppStrings
 import com.example.ui.theme.*
-import android.graphics.Bitmap
-import android.media.MediaMetadataRetriever
-import android.os.Build
-import android.os.SystemClock
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onSizeChanged
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.Locale
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Minimalist, high-performance Video Player powered by AndroidX Media3 ExoPlayer.
@@ -75,12 +63,8 @@ import java.util.concurrent.atomic.AtomicInteger
  *   AspectRatioFrameLayout.RESIZE_MODE_FIT so high-res videos (e.g. 1950x1200) NEVER go under UI bars.
  * - Pure rectangular styling (0dp corners) without rounded clipping.
  * - Minimal, distraction-free playback controls: Previous, Play/Pause, Next, Shuffle & Seekbar.
+ * - Ultra-smooth hardware-accelerated playback speed control without dropped frames or stutter.
  */
-data class CachedFrame(
-    val timestampMs: Long,
-    val bitmap: Bitmap
-)
-
 @OptIn(UnstableApi::class)
 @Composable
 fun VideoPlayerView(
@@ -115,37 +99,7 @@ fun VideoPlayerView(
     var showSpeedDialog by remember { mutableStateOf(false) }
     val seekSignal = remember { Channel<Unit>(Channel.CONFLATED) }
 
-    // MediaMetadataRetriever for extracting scaled frames during reverse playback
-    var reverseFrameBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var viewportWidthPx by remember { mutableIntStateOf(0) }
-    var viewportHeightPx by remember { mutableIntStateOf(0) }
-
-    // Pre-buffered Frame Cache for 100% stutter-free and drop-free reverse playback
-    var isBufferingReverse by remember { mutableStateOf(false) }
-    var reverseBufferProgress by remember { mutableFloatStateOf(0f) }
-    var cachedReverseFrames by remember { mutableStateOf<List<CachedFrame>>(emptyList()) }
-    var cachedRangeStartMs by remember { mutableLongStateOf(-1L) }
-    var cachedRangeEndMs by remember { mutableLongStateOf(-1L) }
-    var reverseUsesNativeSeek by remember { mutableStateOf(false) }
-
-    val frameRetriever = remember(media.id, media.internalPath) {
-        MediaMetadataRetriever().apply {
-            try {
-                setDataSource(media.internalPath)
-            } catch (_: Exception) {
-                try {
-                    val f = File(media.internalPath)
-                    if (f.exists()) {
-                        java.io.FileInputStream(f).use { fis ->
-                            setDataSource(fis.fd)
-                        }
-                    }
-                } catch (_: Exception) {}
-            }
-        }
-    }
-
-    // Quick on-screen feedback (play/pause, speed/reverse, or ±10s seek)
+    // Quick on-screen feedback (play/pause, speed, or ±10s seek)
     var actionFeedback by remember { mutableStateOf<Pair<ImageVector, String>?>(null) }
     LaunchedEffect(actionFeedback) {
         if (actionFeedback != null) {
@@ -155,80 +109,81 @@ fun VideoPlayerView(
     }
 
     // Media3 ExoPlayer setup & lifecycle
+    // Configured with generous LoadControl and Decoder Fallback to prevent dropped frames or stutter at high speeds
     DisposableEffect(media.id, media.internalPath) {
         isBuffering = true
         isPlaybackActive = true
         currentPos = 0L
         duration = 0L
-        cachedReverseFrames = emptyList()
-        cachedRangeStartMs = -1L
-        cachedRangeEndMs = -1L
-        reverseFrameBitmap = null
-        isBufferingReverse = false
-        reverseUsesNativeSeek = false
 
-        val isReverse = speed < 0f
-        val player = ExoPlayer.Builder(context).build().apply {
-            playWhenReady = !isReverse
-            repeatMode = if (loopVideo) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
-            if (isReverse) {
-                volume = 0f
-                setSeekParameters(SeekParameters(150_000L, 150_000L))
-            } else {
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                /* minBufferMs = */ 25_000,
+                /* maxBufferMs = */ 65_000,
+                /* bufferForPlaybackMs = */ 1_000,
+                /* bufferForPlaybackAfterRebufferMs = */ 2_000
+            )
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .setBackBuffer(10_000, /* retainBackBufferFromKeyframe = */ true)
+            .build()
+
+        val renderersFactory = DefaultRenderersFactory(context).apply {
+            setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+            setEnableDecoderFallback(true) // Smooth hardware/software decoder fallback
+            setAllowedVideoJoiningTimeMs(5000)
+        }
+
+        val player = ExoPlayer.Builder(context, renderersFactory)
+            .setLoadControl(loadControl)
+            .build().apply {
+                playWhenReady = true
+                repeatMode = if (loopVideo) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+                videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT
+                setSeekParameters(SeekParameters.EXACT)
                 volume = 1f
-                setSeekParameters(SeekParameters.DEFAULT)
                 try {
-                    playbackParameters = PlaybackParameters(speed.coerceIn(0.1f, 4.0f))
+                    playbackParameters = PlaybackParameters(speed.coerceIn(0.25f, 3.0f))
                 } catch (_: Exception) {
                     playbackParameters = PlaybackParameters(1.0f)
                 }
-            }
 
-            val file = File(media.internalPath)
-            val uri = Uri.fromFile(file)
-            val mediaItem = MediaItem.fromUri(uri)
-            setMediaItem(mediaItem)
-            prepare()
+                val file = File(media.internalPath)
+                val uri = Uri.fromFile(file)
+                val mediaItem = MediaItem.fromUri(uri)
+                setMediaItem(mediaItem)
+                prepare()
 
-            addListener(object : Player.Listener {
-                override fun onPlaybackStateChanged(playbackState: Int) {
-                    when (playbackState) {
-                        Player.STATE_BUFFERING -> {
-                            if (speed >= 0f) {
+                addListener(object : Player.Listener {
+                    override fun onPlaybackStateChanged(playbackState: Int) {
+                        when (playbackState) {
+                            Player.STATE_BUFFERING -> {
                                 isBuffering = true
                             }
-                        }
-                        Player.STATE_READY -> {
-                            isBuffering = false
-                            duration = this@apply.duration.coerceAtLeast(0L)
-                            if (speed > 0f) {
+                            Player.STATE_READY -> {
+                                isBuffering = false
+                                duration = this@apply.duration.coerceAtLeast(0L)
                                 isPlaybackActive = this@apply.isPlaying
+                                seekSignal.trySend(Unit)
                             }
-                            seekSignal.trySend(Unit)
-                        }
-                        Player.STATE_ENDED -> {
-                            isBuffering = false
-                            if (speed > 0f) {
+                            Player.STATE_ENDED -> {
+                                isBuffering = false
                                 isPlaybackActive = false
                                 if (autoPlayNext && !loopVideo) {
                                     onNext()
                                 }
                             }
-                        }
-                        Player.STATE_IDLE -> {
-                            isBuffering = false
-                            isPlaybackActive = false
+                            Player.STATE_IDLE -> {
+                                isBuffering = false
+                                isPlaybackActive = false
+                            }
                         }
                     }
-                }
 
-                override fun onIsPlayingChanged(playing: Boolean) {
-                    if (speed > 0f) {
+                    override fun onIsPlayingChanged(playing: Boolean) {
                         isPlaybackActive = playing
                     }
-                }
-            })
-        }
+                })
+            }
 
         exoPlayer = player
 
@@ -238,33 +193,16 @@ fun VideoPlayerView(
             if (exoPlayer === player) {
                 exoPlayer = null
             }
-            try {
-                frameRetriever.release()
-            } catch (_: Exception) {}
         }
     }
 
-    // React to playback speed changes
+    // Seamlessly update playback speed on the fly without flushing decoder buffers or seeking
     LaunchedEffect(speed, exoPlayer) {
         exoPlayer?.let { player ->
-            if (speed > 0f) {
-                reverseFrameBitmap = null
-                isBufferingReverse = false
-                reverseUsesNativeSeek = false
-                player.setSeekParameters(SeekParameters.DEFAULT)
-                player.volume = 1f
-                try {
-                    player.playbackParameters = PlaybackParameters(speed.coerceIn(0.1f, 4.0f))
-                } catch (_: Exception) {
-                    player.playbackParameters = PlaybackParameters(1.0f)
-                }
-                player.seekTo(currentPos)
-                if (isPlaybackActive && !player.isPlaying) {
-                    player.play()
-                }
-            } else {
-                player.pause()
-                player.volume = 0f
+            try {
+                player.playbackParameters = PlaybackParameters(speed.coerceIn(0.25f, 3.0f))
+            } catch (_: Exception) {
+                player.playbackParameters = PlaybackParameters(1.0f)
             }
         }
     }
@@ -284,215 +222,19 @@ fun VideoPlayerView(
         }
     }
 
-    // Reverse Playback Coroutine Engine powered by Pre-buffering Frame Cache (100% stutter-free and drop-free)
-    // with real-time clock synchronization, multi-core parallel extraction, and WebM native seek fallback
-    LaunchedEffect(speed, isPlaybackActive, loopVideo, duration, exoPlayer, viewportWidthPx, viewportHeightPx) {
-        if (speed < 0f && isPlaybackActive) {
-            val player = exoPlayer ?: return@LaunchedEffect
-            player.pause()
-            player.volume = 0f
-
-            // If at beginning or close to 0, auto jump to the end of the video to play backwards
-            var currentReversePos = currentPos
-            if (currentReversePos <= 150L && duration > 0L) {
-                currentReversePos = duration
-                currentPos = duration
-                player.seekTo(duration)
-            }
-
-            val absSpeed = kotlin.math.abs(speed).coerceIn(0.25f, 4.0f)
-            val frameIntervalMs = 80L // ~12.5 FPS: fluid, crisp, real-time backward animation
-
-            while (isActive && isPlaybackActive && speed < 0f) {
-                if (isUserSeeking) {
-                    currentReversePos = currentPos
-                    delay(50)
-                    continue
-                }
-
-                // If user jumped via double tap (+/-10s) or seekbar (anchor synced via currentPos)
-                if (kotlin.math.abs(currentReversePos - currentPos) > 400L) {
-                    currentReversePos = currentPos
-                }
-
-                // If MediaMetadataRetriever cannot decode this file format (e.g. WebM VP8/VP9 on Stagefright),
-                // fall back seamlessly to native ExoPlayer seeking backwards
-                if (reverseUsesNativeSeek) {
-                    isBufferingReverse = false
-                    reverseFrameBitmap = null
-                    player.setSeekParameters(SeekParameters.CLOSEST_SYNC)
-
-                    val stepMs = (80L * absSpeed).toLong().coerceAtLeast(33L)
-                    currentReversePos = (currentReversePos - stepMs).coerceAtLeast(0L)
-                    player.seekTo(currentReversePos)
-                    currentPos = currentReversePos
-
-                    if (currentReversePos <= 0L) {
-                        if (loopVideo && duration > 0L) {
-                            currentReversePos = duration
-                            currentPos = duration
-                            player.seekTo(duration)
-                        } else {
-                            currentPos = 0L
-                            isPlaybackActive = false
-                            break
-                        }
-                    }
-
-                    val delayMs = (80L / absSpeed).toLong().coerceIn(25L, 250L)
-                    delay(delayMs)
-                    continue
-                }
-
-                // Check if current position is covered by the pre-buffered frames cache
-                val hasCachedChunk = cachedReverseFrames.isNotEmpty() &&
-                        currentReversePos in (cachedRangeStartMs - 150L..cachedRangeEndMs + 150L)
-
-                if (!hasCachedChunk) {
-                    // Maximum phone performance: multi-core parallel extraction
-                    // Downscaled dimensions for high decoding throughput and low RAM footprint
-                    val targetWidth = (if (viewportWidthPx > 0) viewportWidthPx / 2 else 540).coerceIn(360, 640)
-                    val targetHeight = (if (viewportHeightPx > 0) viewportHeightPx / 2 else 960).coerceIn(480, 960)
-
-                    // For short/medium videos (<= 35s), buffer the entire remaining video all at once!
-                    // For longer videos, buffer an expansive 18-second chunk.
-                    val chunkDurationMs = if (duration in 1L..35_000L) duration else 18_000L
-                    val chunkEndMs = currentReversePos.coerceIn(0L, duration.coerceAtLeast(1L))
-                    val chunkStartMs = (chunkEndMs - chunkDurationMs).coerceAtLeast(0L)
-
-                    val frameTimestamps = mutableListOf<Long>()
-                    var t = chunkEndMs
-                    while (t >= chunkStartMs) {
-                        frameTimestamps.add(t)
-                        t -= frameIntervalMs
-                    }
-                    if (frameTimestamps.isEmpty()) {
-                        frameTimestamps.add(chunkEndMs)
-                    }
-
-                    isBufferingReverse = true
-                    reverseBufferProgress = 0f
-
-                    val loadedFrames = withContext(Dispatchers.Default) {
-                        val total = frameTimestamps.size
-                        val numCores = Runtime.getRuntime().availableProcessors().coerceIn(2, 6)
-                        val results = ConcurrentHashMap<Long, Bitmap>()
-                        val completedCount = AtomicInteger(0)
-
-                        coroutineScope {
-                            (0 until numCores).map { coreIndex ->
-                                async {
-                                    val workerRetriever = createWorkerRetriever(media.internalPath)
-                                    try {
-                                        for (idx in coreIndex until total step numCores) {
-                                            if (!isActive || !isPlaybackActive || speed >= 0f) break
-                                            val ts = frameTimestamps[idx]
-                                            val timeUs = ts.coerceAtLeast(0L) * 1000L
-                                            val bmp = extractScaledFrameWithFallback(
-                                                workerRetriever,
-                                                timeUs,
-                                                targetWidth,
-                                                targetHeight
-                                            )
-                                            if (bmp != null) {
-                                                results[ts] = bmp
-                                            }
-                                            val done = completedCount.incrementAndGet()
-                                            reverseBufferProgress = done.toFloat() / total.toFloat()
-                                        }
-                                    } finally {
-                                        try { workerRetriever.release() } catch (_: Exception) {}
-                                    }
-                                }
-                            }.awaitAll()
-                        }
-
-                        results.entries
-                            .sortedByDescending { it.key }
-                            .map { CachedFrame(it.key, it.value) }
-                    }
-
-                    isBufferingReverse = false
-
-                    if (loadedFrames.isNotEmpty()) {
-                        // Merge into cumulative frame cache (up to 400 frames)
-                        val combined = (cachedReverseFrames + loadedFrames)
-                            .distinctBy { it.timestampMs }
-                            .sortedByDescending { it.timestampMs }
-                            .take(400)
-                        cachedReverseFrames = combined
-                        cachedRangeStartMs = if (cachedRangeStartMs >= 0L) minOf(cachedRangeStartMs, chunkStartMs) else chunkStartMs
-                        cachedRangeEndMs = if (cachedRangeEndMs >= 0L) maxOf(cachedRangeEndMs, chunkEndMs) else chunkEndMs
-                    } else {
-                        // MediaMetadataRetriever failed to extract frames for this format (e.g. WebM/VP8/VP9)
-                        // Seamlessly switch to native ExoPlayer seek-reverse mode
-                        reverseUsesNativeSeek = true
-                        continue
-                    }
-                }
-
-                // Playback from cached frames: Clock-synced pacing ensures true 1.0x real-time speed!
-                val remainingFrames = cachedReverseFrames.filter { it.timestampMs <= currentReversePos }
-                if (remainingFrames.isEmpty()) {
-                    // Reached beginning of current cached chunk or video
-                    if (cachedRangeStartMs <= 0L || currentReversePos <= 100L) {
-                        if (loopVideo && duration > 0L) {
-                            currentReversePos = duration
-                            currentPos = duration
-                            continue
-                        } else {
-                            currentPos = 0L
-                            isPlaybackActive = false
-                            break
-                        }
-                    } else {
-                        // Load previous chunk backwards
-                        currentReversePos = (cachedRangeStartMs - 1L).coerceAtLeast(0L)
-                        currentPos = currentReversePos
-                        continue
-                    }
-                }
-
-                // Clock-synced pacing: eliminates coroutine drift and VSYNC recomposition latency
-                var nextFrameUptime = SystemClock.uptimeMillis()
-                val nominalFrameDelay = (frameIntervalMs / absSpeed).toLong().coerceAtLeast(16L)
-
-                for (frame in remainingFrames) {
-                    if (!isActive || !isPlaybackActive || speed >= 0f || isUserSeeking) break
-                    if (kotlin.math.abs(currentReversePos - currentPos) > 400L) break // external jump
-
-                    reverseFrameBitmap = frame.bitmap
-                    currentReversePos = frame.timestampMs
-                    currentPos = frame.timestampMs
-
-                    nextFrameUptime += nominalFrameDelay
-                    val sleepTime = nextFrameUptime - SystemClock.uptimeMillis()
-                    if (sleepTime > 0) {
-                        delay(sleepTime)
-                    } else if (sleepTime < -nominalFrameDelay) {
-                        // Safeguard: resync clock anchor if delayed
-                        nextFrameUptime = SystemClock.uptimeMillis()
-                    }
-                }
-            }
-        }
-    }
-
     // Forward Playback Progress ticker
-    LaunchedEffect(isPlaybackActive, speed, exoPlayer) {
-        if (speed > 0f) {
-            while (isActive) {
-                exoPlayer?.let { player ->
-                    if (!isUserSeeking) {
-                        currentPos = player.currentPosition.coerceAtLeast(0L)
-                        val dur = player.duration.coerceAtLeast(0L)
-                        if (dur > 0L) {
-                            duration = dur
-                        }
+    LaunchedEffect(isPlaybackActive, exoPlayer) {
+        while (isActive) {
+            exoPlayer?.let { player ->
+                if (!isUserSeeking) {
+                    currentPos = player.currentPosition.coerceAtLeast(0L)
+                    val dur = player.duration.coerceAtLeast(0L)
+                    if (dur > 0L) {
+                        duration = dur
                     }
                 }
-                delay(200)
             }
+            delay(100)
         }
     }
 
@@ -651,12 +393,6 @@ fun VideoPlayerView(
                     .weight(1f)
                     .fillMaxWidth()
                     .background(Color.Black)
-                    .onSizeChanged { size ->
-                        if (size.width > 0 && size.height > 0) {
-                            viewportWidthPx = size.width
-                            viewportHeightPx = size.height
-                        }
-                    }
                     .pointerInput(Unit) {
                         detectTapGestures(
                             onTap = {
@@ -667,11 +403,8 @@ fun VideoPlayerView(
                                         actionFeedback = Icons.Default.Pause to strings.pause
                                     } else {
                                         isPlaybackActive = true
-                                        if (speed > 0f) {
-                                            player.play()
-                                        }
-                                        actionFeedback = (if (speed < 0f) Icons.Default.FastRewind else Icons.Default.PlayArrow) to 
-                                            (if (speed < 0f) strings.reverseSpeed else strings.play)
+                                        player.play()
+                                        actionFeedback = Icons.Default.PlayArrow to strings.play
                                     }
                                 }
                             },
@@ -679,8 +412,7 @@ fun VideoPlayerView(
                                 val isRight = offset.x > (size.width / 2)
                                 exoPlayer?.let { player ->
                                     val delta = if (isRight) 10000L else -10000L
-                                    val currentAnchor = if (speed < 0f) currentPos else player.currentPosition
-                                    val target = (currentAnchor + delta).coerceIn(0L, duration.coerceAtLeast(1L))
+                                    val target = (player.currentPosition + delta).coerceIn(0L, duration.coerceAtLeast(1L))
                                     player.seekTo(target)
                                     currentPos = target
                                     actionFeedback = (if (isRight) Icons.Default.Forward10 else Icons.Default.Replay10) to (if (isRight) "+10s" else "-10s")
@@ -712,68 +444,8 @@ fun VideoPlayerView(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Reverse Frame ImageView Layer (Displays frames retrieved via MediaMetadataRetriever.getScaledFrameAtTime)
-                if (speed < 0f && reverseFrameBitmap != null) {
-                    Image(
-                        bitmap = reverseFrameBitmap!!.asImageBitmap(),
-                        contentDescription = "Reverse Playback Frame",
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .testTag("reverse_frame_image_view")
-                    )
-                }
-
-                // Pre-buffering indicator for reverse playback
-                if (isBufferingReverse) {
-                    Surface(
-                        shape = RoundedCornerShape(0.dp),
-                        color = VaultSurfaceElevated.copy(alpha = 0.95f),
-                        border = BorderStroke(1.dp, VaultPrimary),
-                        modifier = Modifier.padding(20.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                CircularProgressIndicator(
-                                    color = VaultPrimary,
-                                    strokeWidth = 2.dp,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Text(
-                                    text = strings.reversePreparing,
-                                    color = VaultPrimary,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-                            LinearProgressIndicator(
-                                progress = { reverseBufferProgress },
-                                color = VaultPrimary,
-                                trackColor = VaultSurfaceHighlight,
-                                modifier = Modifier
-                                    .width(180.dp)
-                                    .height(4.dp)
-                            )
-                            Text(
-                                text = "${(reverseBufferProgress * 100).toInt()}%",
-                                color = VaultTextSecondary,
-                                fontSize = 10.sp,
-                                fontFamily = FontFamily.Monospace
-                            )
-                        }
-                    }
-                }
-
-                // Buffering indicator (only shown for forward playback or initial load)
-                if (isBuffering && speed >= 0f) {
+                // Buffering indicator (shown during loading or re-buffering)
+                if (isBuffering) {
                     Surface(
                         shape = RoundedCornerShape(0.dp),
                         color = VaultSurfaceElevated.copy(alpha = 0.9f),
@@ -855,12 +527,12 @@ fun VideoPlayerView(
                             fontFamily = FontFamily.Monospace
                         )
 
-                        // Visual Badge when Speed != 1.0 or Reverse active
-                        if (speed < 0f) {
+                        // Visual Badge when Speed != 1.0
+                        if (speed != 1.0f) {
                             Surface(
                                 shape = RoundedCornerShape(0.dp),
-                                color = VaultError.copy(alpha = 0.2f),
-                                border = BorderStroke(1.dp, VaultError),
+                                color = VaultPrimary.copy(alpha = 0.2f),
+                                border = BorderStroke(1.dp, VaultPrimary),
                                 modifier = Modifier.clickable { showSpeedDialog = true }
                             ) {
                                 Row(
@@ -869,35 +541,19 @@ fun VideoPlayerView(
                                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.FastRewind,
+                                        imageVector = Icons.Default.FastForward,
                                         contentDescription = null,
-                                        tint = VaultError,
+                                        tint = VaultPrimary,
                                         modifier = Modifier.size(12.dp)
                                     )
                                     Text(
-                                        text = "${strings.reverseSpeed.uppercase()} ${speed}x",
-                                        color = VaultError,
+                                        text = "${speed}x",
+                                        color = VaultPrimary,
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
                                         fontFamily = FontFamily.Monospace
                                     )
                                 }
-                            }
-                        } else if (speed != 1.0f) {
-                            Surface(
-                                shape = RoundedCornerShape(0.dp),
-                                color = VaultPrimary.copy(alpha = 0.2f),
-                                border = BorderStroke(1.dp, VaultPrimary),
-                                modifier = Modifier.clickable { showSpeedDialog = true }
-                            ) {
-                                Text(
-                                    text = "⏩ ${speed}x",
-                                    color = VaultPrimary,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.Monospace,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
                             }
                         }
 
@@ -935,7 +591,7 @@ fun VideoPlayerView(
                     )
 
                     // 5 Buttons in a Clean Row:
-                    // 1. Previous | 2. Play/Pause | 3. Next | 4. Shuffle | 5. Speed & Reverse
+                    // 1. Previous | 2. Play/Pause | 3. Next | 4. Shuffle | 5. Speed
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -979,9 +635,7 @@ fun VideoPlayerView(
                                             player.pause()
                                         } else {
                                             isPlaybackActive = true
-                                            if (speed > 0f) {
-                                                player.play()
-                                            }
+                                            player.play()
                                         }
                                     }
                                 }
@@ -1040,15 +694,14 @@ fun VideoPlayerView(
                             }
                         }
 
-                        // 5. Speed & Reverse Button (Tap to open selector, Long press to toggle direction)
-                        val isReverse = speed < 0f
-                        val absSpeed = kotlin.math.abs(speed)
-                        val speedDisplay = if (absSpeed % 1f == 0f) "${absSpeed.toInt()}x" else "${absSpeed}x"
+                        // 5. Speed Button (Tap to open selector, Long press to quick cycle common speeds)
+                        val speedDisplay = if (speed % 1f == 0f) "${speed.toInt()}x" else "${speed}x"
+                        val isSpeedModified = speed != 1.0f
 
                         Surface(
                             shape = RoundedCornerShape(0.dp),
-                            color = if (isReverse) VaultError.copy(alpha = 0.2f) else if (speed != 1.0f) VaultPrimary.copy(alpha = 0.2f) else VaultSurfaceElevated,
-                            border = BorderStroke(1.dp, if (isReverse) VaultError else if (speed != 1.0f) VaultPrimary else VaultBorder),
+                            color = if (isSpeedModified) VaultPrimary.copy(alpha = 0.2f) else VaultSurfaceElevated,
+                            border = BorderStroke(1.dp, if (isSpeedModified) VaultPrimary else VaultBorder),
                             modifier = Modifier
                                 .weight(1.15f)
                                 .height(46.dp)
@@ -1056,11 +709,11 @@ fun VideoPlayerView(
                                     detectTapGestures(
                                         onTap = { showSpeedDialog = true },
                                         onLongPress = {
-                                            // Toggle direction between forward and reverse
-                                            val newSpeed = -speed
+                                            val cycleSpeeds = listOf(1.0f, 1.25f, 1.5f, 2.0f)
+                                            val nextIndex = (cycleSpeeds.indexOf(speed) + 1) % cycleSpeeds.size
+                                            val newSpeed = cycleSpeeds[nextIndex]
                                             onSpeedChange(newSpeed)
-                                            actionFeedback = (if (newSpeed < 0f) Icons.Default.FastRewind else Icons.Default.FastForward) to 
-                                                (if (newSpeed < 0f) "⏪ ${strings.reverseSpeed}" else "⏩ ${strings.normalSpeed}")
+                                            actionFeedback = Icons.Default.FastForward to "⏩ ${newSpeed}x"
                                         }
                                     )
                                 }
@@ -1075,25 +728,23 @@ fun VideoPlayerView(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(2.dp)
                                     ) {
-                                        if (isReverse) {
-                                            Icon(
-                                                imageVector = Icons.Default.FastRewind,
-                                                contentDescription = strings.reverseSpeed,
-                                                tint = VaultError,
-                                                modifier = Modifier.size(13.dp)
-                                            )
-                                        }
+                                        Icon(
+                                            imageVector = Icons.Default.FastForward,
+                                            contentDescription = strings.speed,
+                                            tint = if (isSpeedModified) VaultPrimary else VaultTextPrimary,
+                                            modifier = Modifier.size(13.dp)
+                                        )
                                         Text(
-                                            text = if (isReverse) "-$speedDisplay" else speedDisplay,
-                                            color = if (isReverse) VaultError else if (speed != 1.0f) VaultPrimary else VaultTextPrimary,
+                                            text = speedDisplay,
+                                            color = if (isSpeedModified) VaultPrimary else VaultTextPrimary,
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold,
                                             fontFamily = FontFamily.Monospace
                                         )
                                     }
                                     Text(
-                                        text = if (isReverse) strings.reverseSpeed.uppercase() else strings.speed.uppercase(),
-                                        color = if (isReverse) VaultError.copy(alpha = 0.85f) else VaultTextSecondary,
+                                        text = strings.speed.uppercase(),
+                                        color = if (isSpeedModified) VaultPrimary else VaultTextSecondary,
                                         fontSize = 8.sp,
                                         fontWeight = FontWeight.Medium,
                                         fontFamily = FontFamily.Monospace
@@ -1106,16 +757,14 @@ fun VideoPlayerView(
             }
         }
 
-        // Speed & Reverse Modal Dialog
+        // Speed Selection Modal Dialog
         if (showSpeedDialog) {
             SpeedSelectorDialog(
                 currentSpeed = speed,
                 strings = strings,
                 onSpeedSelected = { newSpeed ->
                     onSpeedChange(newSpeed)
-                    val isRev = newSpeed < 0f
-                    actionFeedback = (if (isRev) Icons.Default.FastRewind else Icons.Default.FastForward) to 
-                        (if (isRev) "⏪ ${strings.reverseSpeed} ${newSpeed}x" else "⏩ ${newSpeed}x")
+                    actionFeedback = Icons.Default.FastForward to "⏩ ${newSpeed}x"
                 },
                 onDismiss = { showSpeedDialog = false }
             )
@@ -1124,8 +773,8 @@ fun VideoPlayerView(
 }
 
 /**
- * Minimalist, high-tech Speed & Reverse selection dialog.
- * Allows picking forward speeds (0.25x - 3.0x) or reverse playback speeds (-0.25x - -3.0x).
+ * Minimalist, high-tech Speed selection dialog.
+ * Allows picking forward speeds (0.25x - 3.0x) with hardware-accelerated smooth playback.
  */
 @Composable
 fun SpeedSelectorDialog(
@@ -1134,10 +783,7 @@ fun SpeedSelectorDialog(
     onSpeedSelected: (Float) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var isReverseTab by remember { mutableStateOf(currentSpeed < 0f) }
-
-    val forwardSpeeds = listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 3.0f)
-    val reverseSpeeds = listOf(-0.25f, -0.5f, -0.75f, -1.0f, -1.25f, -1.5f, -2.0f, -3.0f)
+    val forwardSpeeds = listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f, 3.0f)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1172,129 +818,45 @@ fun SpeedSelectorDialog(
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Direction Toggle Tabs (Forward vs Reverse)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Forward Tab
-                    Surface(
-                        shape = RoundedCornerShape(0.dp),
-                        color = if (!isReverseTab) VaultPrimary else VaultSurface,
-                        border = BorderStroke(1.dp, if (!isReverseTab) VaultPrimaryLight else VaultBorder),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(40.dp)
-                            .clickable { isReverseTab = false }
+                val chunked = forwardSpeeds.chunked(3)
+                chunked.forEach { rowSpeeds ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.FastForward,
-                                    contentDescription = null,
-                                    tint = if (!isReverseTab) VaultOnPrimary else VaultTextSecondary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Text(
-                                    text = strings.normalSpeed,
-                                    color = if (!isReverseTab) VaultOnPrimary else VaultTextSecondary,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-                        }
-                    }
-
-                    // Reverse Tab
-                    Surface(
-                        shape = RoundedCornerShape(0.dp),
-                        color = if (isReverseTab) VaultError else VaultSurface,
-                        border = BorderStroke(1.dp, if (isReverseTab) VaultError else VaultBorder),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(40.dp)
-                            .clickable { isReverseTab = true }
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.FastRewind,
-                                    contentDescription = null,
-                                    tint = if (isReverseTab) Color.White else VaultTextSecondary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Text(
-                                    text = strings.reverseSpeed,
-                                    color = if (isReverseTab) Color.White else VaultTextSecondary,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Grid of Speed Chips (3 per row)
-                val targetSpeeds = if (isReverseTab) reverseSpeeds else forwardSpeeds
-                val chunked = targetSpeeds.chunked(3)
-
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    chunked.forEach { rowSpeeds ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            rowSpeeds.forEach { spd ->
-                                val isSelected = currentSpeed == spd
-                                val label = "${spd}x"
-                                Surface(
-                                    shape = RoundedCornerShape(0.dp),
-                                    color = if (isSelected) {
-                                        if (spd < 0f) VaultError else VaultPrimary
-                                    } else VaultSurface,
-                                    border = BorderStroke(
-                                        1.dp,
-                                        if (isSelected) {
-                                            if (spd < 0f) VaultError else VaultPrimaryLight
-                                        } else VaultBorder
-                                    ),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(38.dp)
-                                        .clickable {
-                                            onSpeedSelected(spd)
-                                            onDismiss()
-                                        }
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text(
-                                            text = label,
-                                            color = if (isSelected) {
-                                                if (spd < 0f) Color.White else VaultOnPrimary
-                                            } else VaultTextPrimary,
-                                            fontSize = 12.sp,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                            fontFamily = FontFamily.Monospace
-                                        )
+                        rowSpeeds.forEach { spd ->
+                            val isSelected = currentSpeed == spd
+                            val label = "${spd}x"
+                            Surface(
+                                shape = RoundedCornerShape(0.dp),
+                                color = if (isSelected) VaultPrimary else VaultSurface,
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isSelected) VaultPrimaryLight else VaultBorder
+                                ),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(38.dp)
+                                    .clickable {
+                                        onSpeedSelected(spd)
+                                        onDismiss()
                                     }
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = label,
+                                        color = if (isSelected) VaultOnPrimary else VaultTextPrimary,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        fontFamily = FontFamily.Monospace
+                                    )
                                 }
                             }
-                            repeat(3 - rowSpeeds.size) {
-                                Spacer(modifier = Modifier.weight(1f))
-                            }
+                        }
+                        repeat(3 - rowSpeeds.size) {
+                            Spacer(modifier = Modifier.weight(1f))
                         }
                     }
                 }
@@ -1325,102 +887,6 @@ fun SpeedSelectorDialog(
             }
         }
     )
-}
-
-/**
- * Robust multi-tier frame extractor.
- * 1. OPTION_CLOSEST: preferred for MP4 & sample-accurate seeks.
- * 2. OPTION_CLOSEST_SYNC: essential for WebM (VP8/VP9) and Matroska where Stagefright lacks cue tables.
- * 3. OPTION_PREVIOUS_SYNC: keyframe fallback for legacy containers.
- * 4. Raw getFrameAtTime fallback.
- */
-private fun extractScaledFrameWithFallback(
-    retriever: MediaMetadataRetriever,
-    timeUs: Long,
-    targetWidth: Int,
-    targetHeight: Int
-): Bitmap? {
-    // 1. Try OPTION_CLOSEST
-    try {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            val bmp = retriever.getScaledFrameAtTime(
-                timeUs,
-                MediaMetadataRetriever.OPTION_CLOSEST,
-                targetWidth,
-                targetHeight
-            )
-            if (bmp != null) return bmp
-        } else {
-            val raw = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST)
-            if (raw != null) {
-                return Bitmap.createScaledBitmap(raw, targetWidth, targetHeight, true)
-            }
-        }
-    } catch (_: Exception) {}
-
-    // 2. WebM / Matroska fallback: OPTION_CLOSEST_SYNC
-    try {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            val bmp = retriever.getScaledFrameAtTime(
-                timeUs,
-                MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
-                targetWidth,
-                targetHeight
-            )
-            if (bmp != null) return bmp
-        } else {
-            val raw = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-            if (raw != null) {
-                return Bitmap.createScaledBitmap(raw, targetWidth, targetHeight, true)
-            }
-        }
-    } catch (_: Exception) {}
-
-    // 3. Fallback: OPTION_PREVIOUS_SYNC
-    try {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            val bmp = retriever.getScaledFrameAtTime(
-                timeUs,
-                MediaMetadataRetriever.OPTION_PREVIOUS_SYNC,
-                targetWidth,
-                targetHeight
-            )
-            if (bmp != null) return bmp
-        } else {
-            val raw = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_PREVIOUS_SYNC)
-            if (raw != null) {
-                return Bitmap.createScaledBitmap(raw, targetWidth, targetHeight, true)
-            }
-        }
-    } catch (_: Exception) {}
-
-    // 4. Raw getFrameAtTime fallback
-    try {
-        val raw = retriever.getFrameAtTime(timeUs)
-        if (raw != null) {
-            return Bitmap.createScaledBitmap(raw, targetWidth, targetHeight, true)
-        }
-    } catch (_: Exception) {}
-
-    return null
-}
-
-/**
- * Creates and initializes an isolated MediaMetadataRetriever instance for a parallel worker thread.
- */
-private fun createWorkerRetriever(path: String): MediaMetadataRetriever {
-    return MediaMetadataRetriever().apply {
-        try {
-            setDataSource(path)
-        } catch (_: Exception) {
-            try {
-                val f = File(path)
-                if (f.exists()) {
-                    java.io.FileInputStream(f).use { fis -> setDataSource(fis.fd) }
-                }
-            } catch (_: Exception) {}
-        }
-    }
 }
 
 
