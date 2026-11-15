@@ -35,13 +35,13 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultLoadControl
-import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -49,7 +49,6 @@ import androidx.media3.ui.PlayerView
 import com.example.data.HiddenMedia
 import com.example.ui.i18n.LocalAppStrings
 import com.example.ui.theme.*
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import java.io.File
@@ -90,14 +89,9 @@ fun VideoPlayerView(
     val strings = LocalAppStrings.current
 
     var isPlaybackActive by remember { mutableStateOf(true) }
-    var currentPos by remember { mutableLongStateOf(0L) }
-    var duration by remember { mutableLongStateOf(0L) }
     var isBuffering by remember { mutableStateOf(true) }
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
-    var isUserSeeking by remember { mutableStateOf(false) }
-    var seekSliderPos by remember { mutableFloatStateOf(0f) }
     var showSpeedDialog by remember { mutableStateOf(false) }
-    val seekSignal = remember { Channel<Unit>(Channel.CONFLATED) }
 
     // Quick on-screen feedback (play/pause, speed, or ±10s seek)
     var actionFeedback by remember { mutableStateOf<Pair<ImageVector, String>?>(null) }
@@ -109,12 +103,10 @@ fun VideoPlayerView(
     }
 
     // Media3 ExoPlayer setup & lifecycle
-    // Configured with generous LoadControl and Decoder Fallback to prevent dropped frames or stutter at high speeds
+    // Configured with SmoothRenderersFactory, generous LoadControl, and HyperOS 120Hz frame-pacing lock
     DisposableEffect(media.id, media.internalPath) {
         isBuffering = true
         isPlaybackActive = true
-        currentPos = 0L
-        duration = 0L
 
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
@@ -127,14 +119,19 @@ fun VideoPlayerView(
             .setBackBuffer(10_000, /* retainBackBufferFromKeyframe = */ true)
             .build()
 
-        val renderersFactory = DefaultRenderersFactory(context).apply {
-            setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
-            setEnableDecoderFallback(true) // Smooth hardware/software decoder fallback
-            setAllowedVideoJoiningTimeMs(5000)
-        }
+        val renderersFactory = SmoothRenderersFactory(context.applicationContext)
+
+        val audioAttributes = AudioAttributes.Builder()
+            .setUsage(C.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+            .build()
 
         val player = ExoPlayer.Builder(context, renderersFactory)
             .setLoadControl(loadControl)
+            .setVideoChangeFrameRateStrategy(C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF)
+            .setWakeMode(C.WAKE_MODE_LOCAL)
+            .setAudioAttributes(audioAttributes, /* handleAudioFocus = */ true)
+            .setHandleAudioBecomingNoisy(true)
             .build().apply {
                 playWhenReady = true
                 repeatMode = if (loopVideo) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
@@ -161,9 +158,7 @@ fun VideoPlayerView(
                             }
                             Player.STATE_READY -> {
                                 isBuffering = false
-                                duration = this@apply.duration.coerceAtLeast(0L)
                                 isPlaybackActive = this@apply.isPlaying
-                                seekSignal.trySend(Unit)
                             }
                             Player.STATE_ENDED -> {
                                 isBuffering = false
@@ -220,29 +215,6 @@ fun VideoPlayerView(
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
         }
-    }
-
-    // Forward Playback Progress ticker
-    LaunchedEffect(isPlaybackActive, exoPlayer) {
-        while (isActive) {
-            exoPlayer?.let { player ->
-                if (!isUserSeeking) {
-                    currentPos = player.currentPosition.coerceAtLeast(0L)
-                    val dur = player.duration.coerceAtLeast(0L)
-                    if (dur > 0L) {
-                        duration = dur
-                    }
-                }
-            }
-            delay(100)
-        }
-    }
-
-    fun formatTime(ms: Long): String {
-        val totalSecs = (ms / 1000).coerceAtLeast(0)
-        val mins = totalSecs / 60
-        val secs = totalSecs % 60
-        return String.format(Locale.US, "%02d:%02d", mins, secs)
     }
 
     val backgroundInteraction = remember { MutableInteractionSource() }
@@ -412,9 +384,9 @@ fun VideoPlayerView(
                                 val isRight = offset.x > (size.width / 2)
                                 exoPlayer?.let { player ->
                                     val delta = if (isRight) 10000L else -10000L
-                                    val target = (player.currentPosition + delta).coerceIn(0L, duration.coerceAtLeast(1L))
+                                    val dur = player.duration.coerceAtLeast(1L)
+                                    val target = (player.currentPosition + delta).coerceIn(0L, dur)
                                     player.seekTo(target)
-                                    currentPos = target
                                     actionFeedback = (if (isRight) Icons.Default.Forward10 else Icons.Default.Replay10) to (if (isRight) "+10s" else "-10s")
                                 }
                             }
@@ -422,7 +394,7 @@ fun VideoPlayerView(
                     },
                 contentAlignment = Alignment.Center
             ) {
-                // ExoPlayer View
+                // ExoPlayer View (SurfaceView direct HWC rendering; isolated from timeline recompositions)
                 AndroidView(
                     factory = { ctx ->
                         PlayerView(ctx).apply {
@@ -432,12 +404,17 @@ fun VideoPlayerView(
                             )
                             useController = false
                             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                            setKeepContentOnPlayerReset(true)
+                            keepScreenOn = isPlaybackActive
                             this.player = exoPlayer
                         }
                     },
                     update = { view ->
                         if (view.player !== exoPlayer) {
                             view.player = exoPlayer
+                        }
+                        if (view.keepScreenOn != isPlaybackActive) {
+                            view.keepScreenOn = isPlaybackActive
                         }
                         view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                     },
@@ -513,81 +490,12 @@ fun VideoPlayerView(
                         .padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    // Timeline: Current position / duration + Speed Badge + Seek slider
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = formatTime(if (isUserSeeking) seekSliderPos.toLong() else currentPos),
-                            color = VaultAccentCyan,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace
-                        )
-
-                        // Visual Badge when Speed != 1.0
-                        if (speed != 1.0f) {
-                            Surface(
-                                shape = RoundedCornerShape(0.dp),
-                                color = VaultPrimary.copy(alpha = 0.2f),
-                                border = BorderStroke(1.dp, VaultPrimary),
-                                modifier = Modifier.clickable { showSpeedDialog = true }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.FastForward,
-                                        contentDescription = null,
-                                        tint = VaultPrimary,
-                                        modifier = Modifier.size(12.dp)
-                                    )
-                                    Text(
-                                        text = "${speed}x",
-                                        color = VaultPrimary,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                }
-                            }
-                        }
-
-                        Text(
-                            text = formatTime(duration),
-                            color = VaultTextSecondary,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            fontFamily = FontFamily.Monospace
-                        )
-                    }
-
-                    // Seek Slider (Crisp rectangular thumb/track)
-                    Slider(
-                        value = if (isUserSeeking) seekSliderPos else currentPos.toFloat(),
-                        onValueChange = { pos ->
-                            isUserSeeking = true
-                            seekSliderPos = pos
-                        },
-                        onValueChangeFinished = {
-                            isUserSeeking = false
-                            exoPlayer?.seekTo(seekSliderPos.toLong())
-                            currentPos = seekSliderPos.toLong()
-                        },
-                        valueRange = 0f..duration.toFloat().coerceAtLeast(1f),
-                        colors = SliderDefaults.colors(
-                            thumbColor = VaultPrimary,
-                            activeTrackColor = VaultPrimary,
-                            inactiveTrackColor = VaultSurfaceHighlight
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(24.dp)
-                            .testTag("player_seek_slider")
+                    // Isolated Timeline + Seekbar so 100ms progress ticks never recompose VideoPlayerView / PlayerView
+                    PlayerTimelineSection(
+                        exoPlayer = exoPlayer,
+                        speed = speed,
+                        isPlaybackActive = isPlaybackActive,
+                        onShowSpeedDialog = { showSpeedDialog = true }
                     )
 
                     // 5 Buttons in a Clean Row:
@@ -770,6 +678,150 @@ fun VideoPlayerView(
             )
         }
     }
+}
+
+/**
+ * Isolated timeline & seekbar composable that owns position polling state (`currentPos`, `duration`).
+ * Keeping this in its own composable scope prevents 10Hz progress ticks from recomposing the parent
+ * [VideoPlayerView] or [AndroidView] (`SurfaceView`), eliminating UI-vs-HWC composition jitter on 120Hz displays.
+ */
+@Composable
+private fun PlayerTimelineSection(
+    exoPlayer: ExoPlayer?,
+    speed: Float,
+    isPlaybackActive: Boolean,
+    onShowSpeedDialog: () -> Unit
+) {
+    var currentPos by remember(exoPlayer) { mutableLongStateOf(0L) }
+    var duration by remember(exoPlayer) { mutableLongStateOf(0L) }
+    var isUserSeeking by remember(exoPlayer) { mutableStateOf(false) }
+    var seekSliderPos by remember(exoPlayer) { mutableFloatStateOf(0f) }
+
+    // Update immediately on seek discontinuities or ready transitions
+    DisposableEffect(exoPlayer) {
+        val player = exoPlayer ?: return@DisposableEffect onDispose {}
+        val listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_READY) {
+                    val dur = player.duration.coerceAtLeast(0L)
+                    if (dur > 0L) duration = dur
+                    if (!isUserSeeking) {
+                        currentPos = player.currentPosition.coerceAtLeast(0L)
+                    }
+                }
+            }
+
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int
+            ) {
+                if (!isUserSeeking) {
+                    currentPos = newPosition.positionMs.coerceAtLeast(0L)
+                }
+            }
+        }
+        player.addListener(listener)
+        onDispose {
+            player.removeListener(listener)
+        }
+    }
+
+    LaunchedEffect(isPlaybackActive, exoPlayer) {
+        while (isActive) {
+            exoPlayer?.let { player ->
+                if (!isUserSeeking) {
+                    currentPos = player.currentPosition.coerceAtLeast(0L)
+                    val dur = player.duration.coerceAtLeast(0L)
+                    if (dur > 0L) {
+                        duration = dur
+                    }
+                }
+            }
+            delay(100)
+        }
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = formatPlayerTime(if (isUserSeeking) seekSliderPos.toLong() else currentPos),
+            color = VaultAccentCyan,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace
+        )
+
+        if (speed != 1.0f) {
+            Surface(
+                shape = RoundedCornerShape(0.dp),
+                color = VaultPrimary.copy(alpha = 0.2f),
+                border = BorderStroke(1.dp, VaultPrimary),
+                modifier = Modifier.clickable { onShowSpeedDialog() }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.FastForward,
+                        contentDescription = null,
+                        tint = VaultPrimary,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Text(
+                        text = "${speed}x",
+                        color = VaultPrimary,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            }
+        }
+
+        Text(
+            text = formatPlayerTime(duration),
+            color = VaultTextSecondary,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            fontFamily = FontFamily.Monospace
+        )
+    }
+
+    Slider(
+        value = if (isUserSeeking) seekSliderPos else currentPos.toFloat(),
+        onValueChange = { pos ->
+            isUserSeeking = true
+            seekSliderPos = pos
+        },
+        onValueChangeFinished = {
+            isUserSeeking = false
+            exoPlayer?.seekTo(seekSliderPos.toLong())
+            currentPos = seekSliderPos.toLong()
+        },
+        valueRange = 0f..duration.toFloat().coerceAtLeast(1f),
+        colors = SliderDefaults.colors(
+            thumbColor = VaultPrimary,
+            activeTrackColor = VaultPrimary,
+            inactiveTrackColor = VaultSurfaceHighlight
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(24.dp)
+            .testTag("player_seek_slider")
+    )
+}
+
+private fun formatPlayerTime(ms: Long): String {
+    val totalSecs = (ms / 1000).coerceAtLeast(0)
+    val mins = totalSecs / 60
+    val secs = totalSecs % 60
+    return String.format(Locale.US, "%02d:%02d", mins, secs)
 }
 
 /**
