@@ -10,26 +10,36 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Generates and caches smart video thumbnails (covers).
- * 
+ * Generates and caches ultra-compressed, lightweight video thumbnails (covers).
+ *
  * Rules:
- * 1. Picks the middle of the video (duration / 2).
- * 2. Checks if there is an excess of black color / darkness in the frame.
- *    If > 85% of pixels are dark/black, tries candidate timestamps (25%, 75%, 15%, 40%, 60%, 10%)
- *    to find an informative non-black frame.
- * 3. Compresses and saves the resulting thumbnail into internal cache directory
- *    so it is persistently available across restarts.
+ * 1. Uses fast keyframe extraction (`OPTION_CLOSEST_SYNC`) and picks the middle of the video.
+ * 2. Rejects overly dark/black frames using a fast 16x16 grid luminance check.
+ * 3. Strictly scales covers down to [THUMB_MAX_DIMENSION] (160px) and compresses as low-quality
+ *    WebP ([THUMB_WEBP_QUALITY] = 32), producing ~1–3 KB covers ideal for small grid frames.
  */
 object VideoThumbnailManager {
     private const val TAG = "VideoThumbnailManager"
     private const val CACHE_SUBDIR = "video_covers"
+    private const val CACHE_SUFFIX = "_t160.webp"
+    private const val THUMB_MAX_DIMENSION = 160
+    private const val THUMB_WEBP_QUALITY = 32
+    private val cleanedLegacyCache = AtomicBoolean(false)
 
     private fun getCoverCacheDir(context: Context): File {
         val dir = File(context.cacheDir, CACHE_SUBDIR)
         if (!dir.exists()) {
             dir.mkdirs()
+        } else if (cleanedLegacyCache.compareAndSet(false, true)) {
+            // Remove older high-res .jpg covers once so cache stays ultra-compact
+            dir.listFiles()?.forEach { file ->
+                if (!file.name.endsWith(CACHE_SUFFIX) && !file.name.endsWith(".tmp")) {
+                    file.delete()
+                }
+            }
         }
         return dir
     }
@@ -38,11 +48,11 @@ object VideoThumbnailManager {
         val rawKey = "$videoPath:$fileSize:$lastModified"
         val md = MessageDigest.getInstance("MD5")
         val digest = md.digest(rawKey.toByteArray())
-        return digest.joinToString("") { "%02x".format(it) } + ".jpg"
+        return digest.joinToString("") { "%02x".format(it) } + CACHE_SUFFIX
     }
 
     /**
-     * Checks if a cached cover already exists on disk.
+     * Checks if a cached ultra-compressed cover already exists on disk.
      */
     fun getCachedCoverFile(context: Context, videoPath: String, fileSize: Long, lastModified: Long): File? {
         val cacheFile = File(getCoverCacheDir(context), getCacheFileKey(videoPath, fileSize, lastModified))
@@ -50,8 +60,8 @@ object VideoThumbnailManager {
     }
 
     /**
-     * Obtains the video cover file. If not cached, extracts the middle frame (with dark frame rejection)
-     * and saves to cache. Returns the File or null if extraction failed.
+     * Obtains the video cover file. If not cached, extracts a frame (with dark frame rejection),
+     * downscales to 160px max dimension, and saves ultra-compressed WebP to cache.
      */
     suspend fun getOrGenerateCoverFile(
         context: Context,
@@ -75,30 +85,22 @@ object VideoThumbnailManager {
             val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
             val durationUs = (durationStr?.toLongOrNull() ?: 1000L) * 1000L
 
-            // Candidates to try:
-            // 1) 50% (middle)
-            // 2) 35%, 65%, 20%, 80%, 10%
             val candidateFractions = listOf(0.50, 0.35, 0.65, 0.20, 0.80, 0.10, 0.05)
             var bestBitmap: Bitmap? = null
             var bestBrightness = -1.0
 
             for (fraction in candidateFractions) {
                 val timeUs = (durationUs * fraction).toLong().coerceAtLeast(0L)
-                val frame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                    retriever.getScaledFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST, 512, 512)
-                } else {
-                    retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST)
-                }
-                
+                val frame = extractLowResFrame(retriever, timeUs)
+
                 if (frame != null) {
                     val blackRatio = calculateBlackPixelRatio(frame)
-                    // If not dominated by black (black ratio < 0.75), we found our ideal cover!
                     if (blackRatio < 0.75) {
+                        bestBitmap?.recycle()
                         bestBitmap = frame
                         break
                     }
-                    
-                    // Keep best candidate if all happen to be somewhat dark
+
                     val brightnessScore = 1.0 - blackRatio
                     if (brightnessScore > bestBrightness) {
                         bestBrightness = brightnessScore
@@ -110,21 +112,21 @@ object VideoThumbnailManager {
                 }
             }
 
-            // Fallback: if all candidate checks failed, try frame at time 0
             if (bestBitmap == null) {
-                bestBitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                    retriever.getScaledFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST, 512, 512)
-                } else {
-                    retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST)
-                }
+                bestBitmap = extractLowResFrame(retriever, 0L)
             }
 
             if (bestBitmap != null) {
-                // Scale down slightly if massive to preserve memory & speed up grid rendering
-                val scaled = scaleDownIfNeeded(bestBitmap, maxDimension = 512)
+                val scaled = scaleDownIfNeeded(bestBitmap, maxDimension = THUMB_MAX_DIMENSION)
                 val tempFile = File(cacheFile.parentFile, "${cacheFile.name}.tmp")
                 FileOutputStream(tempFile).use { out ->
-                    scaled.compress(Bitmap.CompressFormat.JPEG, 85, out)
+                    val format = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        Bitmap.CompressFormat.WEBP_LOSSY
+                    } else {
+                        @Suppress("DEPRECATION")
+                        Bitmap.CompressFormat.WEBP
+                    }
+                    scaled.compress(format, THUMB_WEBP_QUALITY, out)
                     out.flush()
                 }
                 if (scaled != bestBitmap) {
@@ -143,17 +145,25 @@ object VideoThumbnailManager {
         } finally {
             try {
                 retriever.release()
-            } catch (e: Exception) {
-                // Ignore
+            } catch (_: Exception) {
             }
         }
         return@withContext null
     }
 
-    /**
-     * Calculates what percentage of sampled pixels are essentially black/dark.
-     * Samples a 16x16 grid across the bitmap for fast performance without full pixel decoding.
-     */
+    private fun extractLowResFrame(retriever: MediaMetadataRetriever, timeUs: Long): Bitmap? {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            retriever.getScaledFrameAtTime(
+                timeUs,
+                MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                THUMB_MAX_DIMENSION,
+                THUMB_MAX_DIMENSION
+            )
+        } else {
+            retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+        }
+    }
+
     private fun calculateBlackPixelRatio(bitmap: Bitmap): Double {
         val sampleGrid = 16
         var blackCount = 0
@@ -169,9 +179,7 @@ object VideoThumbnailManager {
                 val g = (pixel shr 8) and 0xFF
                 val b = pixel and 0xFF
 
-                // Standard perceptual luminance formula
                 val luminance = 0.299 * r + 0.587 * g + 0.114 * b
-                // Luminance < 25 (out of 255) is regarded as nearly black / dark letterbox
                 if (luminance < 25.0) {
                     blackCount++
                 }

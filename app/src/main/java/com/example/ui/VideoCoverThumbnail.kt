@@ -89,6 +89,8 @@ fun VideoCoverThumbnail(
             AsyncImage(
                 model = ImageRequest.Builder(context)
                     .data(coverFile)
+                    .size(160, 160)
+                    .allowRgb565(true)
                     .crossfade(true)
                     .build(),
                 contentDescription = contentDescription,

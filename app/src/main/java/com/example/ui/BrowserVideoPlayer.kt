@@ -10,8 +10,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -23,14 +21,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
-import java.io.ByteArrayInputStream
 import java.io.File
-import java.io.InputStream
-import java.io.RandomAccessFile
-import java.net.URLConnection
 import java.util.Locale
-import java.util.concurrent.atomic.AtomicReference
-import kotlin.math.min
 
 /**
  * Controller bridging Jetpack Compose controls (Play/Pause, Seek, Speed 0.25x–3.0x, Loop)
@@ -96,8 +88,10 @@ class BrowserVideoController {
 }
 
 /**
- * Chromium WebView-based HTML5 video player ("browser player mode") with full HTTP 206 byte-range
- * local streaming, hardware layer acceleration, instant seeking, and 0.25x–3.0x speed support.
+ * Chromium WebView-based HTML5 video player ("browser player mode") backed by [LocalVideoHttpServer]
+ * on 127.0.0.1 for reliable concurrent HTTP 206 byte-range streaming across all MP4/WebM/MKV variants
+ * (including non-faststart MP4s with trailing `moov` atoms), plus automatic fallback to Native ExoPlayer
+ * if an MP4 uses a codec unsupported by WebView (such as HEVC/H.265).
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -113,10 +107,10 @@ fun BrowserVideoPlayer(
     onBufferingChanged: (Boolean) -> Unit,
     onIsPlayingChanged: (Boolean) -> Unit,
     onEnded: () -> Unit,
+    onUnsupportedCodec: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
-    val activeFileRef = remember { AtomicReference<File?>(null) }
 
     val latestSpeed = rememberUpdatedState(speed.coerceIn(0.25f, 3.0f))
     val latestLoop = rememberUpdatedState(loopVideo)
@@ -125,6 +119,23 @@ fun BrowserVideoPlayer(
     val latestOnBuffering = rememberUpdatedState(onBufferingChanged)
     val latestOnIsPlaying = rememberUpdatedState(onIsPlayingChanged)
     val latestOnEnded = rememberUpdatedState(onEnded)
+    val latestOnUnsupportedCodec = rememberUpdatedState(onUnsupportedCodec)
+
+    val httpServer = remember {
+        LocalVideoHttpServer { videoUrl, queryParams ->
+            val reqSpeed = queryParams["spd"]?.toFloatOrNull() ?: latestSpeed.value
+            val reqLoop = queryParams["lp"]?.toBooleanStrictOrNull() ?: latestLoop.value
+            val reqSeekMs = queryParams["seek"]?.toLongOrNull() ?: latestInitialPos.value
+            val reqAuto = queryParams["auto"]?.toBooleanStrictOrNull() ?: latestAutoStart.value
+            buildBrowserPlayerHtml(
+                videoUrl = videoUrl,
+                initialSpeed = reqSpeed.coerceIn(0.25f, 3.0f),
+                initialLoop = reqLoop,
+                initialSeekMs = reqSeekMs.coerceAtLeast(0L),
+                autoStart = reqAuto
+            )
+        }
+    }
 
     val bridge = remember(controller) {
         object {
@@ -160,19 +171,20 @@ fun BrowserVideoPlayer(
                 mainHandler.post {
                     latestOnBuffering.value(false)
                     latestOnIsPlaying.value(false)
+                    latestOnUnsupportedCodec.value()
                 }
             }
         }
     }
 
-    // Update current media file and load fresh virtual URL whenever the media item changes
+    // Update current media file and load loopback HTTP player URL whenever the media item changes
     LaunchedEffect(mediaId, mediaPath) {
-        activeFileRef.set(File(mediaPath))
+        httpServer.setActiveFile(File(mediaPath))
         controller.currentPositionMs = latestInitialPos.value
         controller.durationMs = 0L
         onBufferingChanged(true)
         controller.webView?.loadUrl(
-            buildPlayerPageUrl(
+            httpServer.buildPlayerUrl(
                 mediaId = mediaId,
                 speed = latestSpeed.value,
                 loop = latestLoop.value,
@@ -201,6 +213,7 @@ fun BrowserVideoPlayer(
                 wv.destroy()
             }
             controller.webView = null
+            httpServer.close()
         }
     }
 
@@ -225,62 +238,14 @@ fun BrowserVideoPlayer(
                     allowContentAccess = false
                     useWideViewPort = true
                     loadWithOverviewMode = true
+                    mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                 }
 
                 addJavascriptInterface(bridge, "VaultBridge")
                 webChromeClient = WebChromeClient()
-                webViewClient = object : WebViewClient() {
-                    override fun shouldInterceptRequest(
-                        view: WebView?,
-                        request: WebResourceRequest?
-                    ): WebResourceResponse? {
-                        val url = request?.url ?: return null
-                        if (url.host != VIRTUAL_HOST) return null
+                webViewClient = WebViewClient()
 
-                        return when (url.path) {
-                            "/player.html" -> {
-                                val reqSpeed = url.getQueryParameter("spd")?.toFloatOrNull() ?: latestSpeed.value
-                                val reqLoop = url.getQueryParameter("lp")?.toBooleanStrictOrNull() ?: latestLoop.value
-                                val reqSeekMs = url.getQueryParameter("seek")?.toLongOrNull() ?: latestInitialPos.value
-                                val reqAuto = url.getQueryParameter("auto")?.toBooleanStrictOrNull() ?: latestAutoStart.value
-                                val reqToken = url.getQueryParameter("v") ?: mediaId.toString()
-                                val html = buildBrowserPlayerHtml(
-                                    videoUrl = "https://$VIRTUAL_HOST/video?v=$reqToken",
-                                    initialSpeed = reqSpeed.coerceIn(0.25f, 3.0f),
-                                    initialLoop = reqLoop,
-                                    initialSeekMs = reqSeekMs.coerceAtLeast(0L),
-                                    autoStart = reqAuto
-                                )
-                                WebResourceResponse(
-                                    "text/html",
-                                    "UTF-8",
-                                    200,
-                                    "OK",
-                                    mapOf("Cache-Control" to "no-store"),
-                                    ByteArrayInputStream(html.toByteArray(Charsets.UTF_8))
-                                )
-                            }
-                            "/video" -> {
-                                val file = activeFileRef.get()
-                                if (file == null || !file.exists() || !file.isFile) {
-                                    WebResourceResponse(
-                                        "text/plain",
-                                        "UTF-8",
-                                        404,
-                                        "Not Found",
-                                        emptyMap(),
-                                        ByteArrayInputStream(ByteArray(0))
-                                    )
-                                } else {
-                                    serveVideoWithRanges(file, request.requestHeaders["Range"] ?: request.requestHeaders["range"])
-                                }
-                            }
-                            else -> null
-                        }
-                    }
-                }
-
-                activeFileRef.set(File(mediaPath))
+                httpServer.setActiveFile(File(mediaPath))
                 this.keepScreenOn = keepScreenOn
                 controller.webView = this
             }
@@ -306,153 +271,6 @@ private class NonInterceptingWebView(context: Context) : WebView(context) {
     override fun onTouchEvent(event: MotionEvent?): Boolean = false
 
     override fun onInterceptTouchEvent(ev: MotionEvent?): Boolean = false
-}
-
-/**
- * Bounded [InputStream] backed by [RandomAccessFile] for zero-copy HTTP 206 byte-range streaming.
- */
-private class RangeFileInputStream(
-    file: File,
-    startOffset: Long,
-    length: Long
-) : InputStream() {
-    private val raf = RandomAccessFile(file, "r")
-    private var remaining: Long = length.coerceAtLeast(0L)
-
-    init {
-        raf.seek(startOffset.coerceAtLeast(0L))
-    }
-
-    override fun read(): Int {
-        if (remaining <= 0L) return -1
-        val b = raf.read()
-        if (b != -1) {
-            remaining--
-        }
-        return b
-    }
-
-    override fun read(b: ByteArray, off: Int, len: Int): Int {
-        if (remaining <= 0L) return -1
-        val toRead = min(len.toLong(), remaining).toInt()
-        if (toRead <= 0) return 0
-        val count = raf.read(b, off, toRead)
-        if (count > 0) {
-            remaining -= count.toLong()
-        }
-        return count
-    }
-
-    override fun available(): Int {
-        return remaining.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-    }
-
-    override fun close() {
-        try {
-            raf.close()
-        } catch (_: Exception) {
-        }
-    }
-}
-
-private const val VIRTUAL_HOST = "vault.local"
-
-private fun buildPlayerPageUrl(
-    mediaId: Int,
-    speed: Float,
-    loop: Boolean,
-    initialPositionMs: Long,
-    autoStart: Boolean
-): String {
-    val token = "${mediaId}_${System.nanoTime()}"
-    val spd = String.format(Locale.US, "%.2f", speed.coerceIn(0.25f, 3.0f))
-    return "https://$VIRTUAL_HOST/player.html?v=$token&spd=$spd&lp=$loop&seek=${initialPositionMs.coerceAtLeast(0L)}&auto=$autoStart"
-}
-
-private fun serveVideoWithRanges(file: File, rangeHeader: String?): WebResourceResponse {
-    val fileLength = file.length()
-    val mimeType = guessVideoMimeType(file)
-
-    if (fileLength <= 0L) {
-        return WebResourceResponse(
-            mimeType,
-            null,
-            200,
-            "OK",
-            mapOf("Content-Length" to "0", "Accept-Ranges" to "bytes", "Cache-Control" to "no-store"),
-            ByteArrayInputStream(ByteArray(0))
-        )
-    }
-
-    var start = 0L
-    var end = fileLength - 1L
-    var isPartial = false
-
-    if (!rangeHeader.isNullOrBlank() && rangeHeader.startsWith("bytes=", ignoreCase = true)) {
-        val spec = rangeHeader.substringAfter("=").substringBefore(",").trim()
-        val parts = spec.split("-")
-        if (parts.size == 2) {
-            val startStr = parts[0].trim()
-            val endStr = parts[1].trim()
-            if (startStr.isNotEmpty()) {
-                start = startStr.toLongOrNull() ?: 0L
-                end = if (endStr.isNotEmpty()) (endStr.toLongOrNull() ?: (fileLength - 1L)) else (fileLength - 1L)
-                isPartial = true
-            } else if (endStr.isNotEmpty()) {
-                val suffixLength = endStr.toLongOrNull() ?: 0L
-                if (suffixLength > 0L) {
-                    start = (fileLength - suffixLength).coerceAtLeast(0L)
-                    end = fileLength - 1L
-                    isPartial = true
-                }
-            }
-        }
-    }
-
-    if (start < 0L || start >= fileLength || end < start) {
-        return WebResourceResponse(
-            "text/plain",
-            "UTF-8",
-            416,
-            "Range Not Satisfiable",
-            mapOf("Content-Range" to "bytes */$fileLength"),
-            ByteArrayInputStream(ByteArray(0))
-        )
-    }
-
-    end = end.coerceAtMost(fileLength - 1L)
-    val contentLength = end - start + 1L
-    val headers = HashMap<String, String>(6).apply {
-        put("Accept-Ranges", "bytes")
-        put("Content-Length", contentLength.toString())
-        put("Cache-Control", "no-store")
-        put("Access-Control-Allow-Origin", "https://$VIRTUAL_HOST")
-        if (isPartial) {
-            put("Content-Range", "bytes $start-$end/$fileLength")
-        }
-    }
-
-    return WebResourceResponse(
-        mimeType,
-        null,
-        if (isPartial) 206 else 200,
-        if (isPartial) "Partial Content" else "OK",
-        headers,
-        RangeFileInputStream(file, start, contentLength)
-    )
-}
-
-private fun guessVideoMimeType(file: File): String {
-    return when (file.extension.lowercase(Locale.US)) {
-        "mp4", "m4v" -> "video/mp4"
-        "webm" -> "video/webm"
-        "mkv" -> "video/x-matroska"
-        "mov" -> "video/quicktime"
-        "3gp" -> "video/3gpp"
-        "avi" -> "video/x-msvideo"
-        "ts", "m2ts" -> "video/mp2t"
-        else -> URLConnection.guessContentTypeFromName(file.name) ?: "video/mp4"
-    }
 }
 
 private fun buildBrowserPlayerHtml(
@@ -489,7 +307,7 @@ private fun buildBrowserPlayerHtml(
           </style>
         </head>
         <body>
-          <video id="v" src="$videoUrl" playsinline preload="auto"></video>
+          <video id="v" src="$videoUrl" playsinline autoplay preload="auto"></video>
           <script>
             (function() {
               var v = document.getElementById('v');
@@ -498,6 +316,8 @@ private fun buildBrowserPlayerHtml(
               var pendingSeekSec = $initialSeekSecStr;
               var autoStart = $autoStart;
               var appliedInitialSeek = false;
+              var userPaused = !autoStart;
+              var hadMetadata = false;
 
               v.loop = targetLoop;
               v.defaultPlaybackRate = targetSpeed;
@@ -514,6 +334,7 @@ private fun buildBrowserPlayerHtml(
               }
 
               v.addEventListener('loadedmetadata', function() {
+                hadMetadata = true;
                 if (!appliedInitialSeek && pendingSeekSec > 0.05 && isFinite(v.duration)) {
                   appliedInitialSeek = true;
                   v.currentTime = Math.min(pendingSeekSec, v.duration);
@@ -525,14 +346,19 @@ private fun buildBrowserPlayerHtml(
                 if (window.VaultBridge && isFinite(v.duration)) {
                   window.VaultBridge.onMetadata(Math.round(v.duration * 1000));
                 }
-                if (autoStart) {
+                if (!userPaused) {
                   v.play().catch(function(){});
+                } else {
+                  v.pause();
                 }
                 reportState();
               });
 
               v.addEventListener('canplay', function() {
                 v.playbackRate = targetSpeed;
+                if (!userPaused && v.paused && !v.ended) {
+                  v.play().catch(function(){});
+                }
                 reportState();
               });
 
@@ -572,10 +398,12 @@ private fun buildBrowserPlayerHtml(
               }, 120);
 
               window.vaultPlay = function() {
+                userPaused = false;
                 v.playbackRate = targetSpeed;
                 v.play().catch(function(){});
               };
               window.vaultPause = function() {
+                userPaused = true;
                 v.pause();
               };
               window.vaultSeekMs = function(ms) {

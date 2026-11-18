@@ -91,7 +91,7 @@ fun VideoPlayerView(
     val strings = LocalAppStrings.current
 
     var effectiveUseBrowser by remember { mutableStateOf(useBrowserPlayer) }
-    LaunchedEffect(useBrowserPlayer) {
+    LaunchedEffect(media.id, useBrowserPlayer) {
         effectiveUseBrowser = useBrowserPlayer
     }
 
@@ -521,6 +521,12 @@ fun VideoPlayerView(
                             if (autoPlayNext && !loopVideo) {
                                 onNext()
                             }
+                        },
+                        onUnsupportedCodec = {
+                            pendingResumePositionMs = browserController.currentPositionMs
+                            pendingAutoStart = isPlaybackActive
+                            effectiveUseBrowser = false
+                            actionFeedback = Icons.Default.PlayCircle to strings.playerEngineNative
                         },
                         modifier = Modifier.fillMaxSize()
                     )
