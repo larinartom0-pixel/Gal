@@ -74,6 +74,8 @@ fun VideoPlayerView(
     totalCount: Int,
     autoPlayNext: Boolean = true,
     loopVideo: Boolean = false,
+    useBrowserPlayer: Boolean = false,
+    onTogglePlayerEngine: (() -> Unit)? = null,
     onSpeedChange: (Float) -> Unit,
     onShuffleToggle: () -> Unit,
     onNext: () -> Unit,
@@ -88,12 +90,22 @@ fun VideoPlayerView(
     val context = LocalContext.current
     val strings = LocalAppStrings.current
 
+    var effectiveUseBrowser by remember { mutableStateOf(useBrowserPlayer) }
+    LaunchedEffect(useBrowserPlayer) {
+        effectiveUseBrowser = useBrowserPlayer
+    }
+
     var isPlaybackActive by remember { mutableStateOf(true) }
     var isBuffering by remember { mutableStateOf(true) }
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
+    val browserController = remember { BrowserVideoController() }
     var showSpeedDialog by remember { mutableStateOf(false) }
 
-    // Quick on-screen feedback (play/pause, speed, or ±10s seek)
+    // Preserved timestamp & play-state when switching between Native <-> Browser mid-video
+    var pendingResumePositionMs by remember(media.id) { mutableLongStateOf(0L) }
+    var pendingAutoStart by remember(media.id) { mutableStateOf(true) }
+
+    // Quick on-screen feedback (play/pause, speed, engine switch, or ±10s seek)
     var actionFeedback by remember { mutableStateOf<Pair<ImageVector, String>?>(null) }
     LaunchedEffect(actionFeedback) {
         if (actionFeedback != null) {
@@ -102,11 +114,15 @@ fun VideoPlayerView(
         }
     }
 
-    // Media3 ExoPlayer setup & lifecycle
-    // Configured with SmoothRenderersFactory, generous LoadControl, and HyperOS 120Hz frame-pacing lock
-    DisposableEffect(media.id, media.internalPath) {
+    // Media3 ExoPlayer setup & lifecycle (active only in Native mode; cleanly released in Browser mode)
+    DisposableEffect(media.id, media.internalPath, effectiveUseBrowser) {
+        if (effectiveUseBrowser) {
+            exoPlayer = null
+            return@DisposableEffect onDispose {}
+        }
+
         isBuffering = true
-        isPlaybackActive = true
+        isPlaybackActive = pendingAutoStart
 
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
@@ -126,6 +142,9 @@ fun VideoPlayerView(
             .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
             .build()
 
+        val resumeMs = pendingResumePositionMs
+        val autoStart = pendingAutoStart
+
         val player = ExoPlayer.Builder(context, renderersFactory)
             .setLoadControl(loadControl)
             .setVideoChangeFrameRateStrategy(C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF)
@@ -133,7 +152,7 @@ fun VideoPlayerView(
             .setAudioAttributes(audioAttributes, /* handleAudioFocus = */ true)
             .setHandleAudioBecomingNoisy(true)
             .build().apply {
-                playWhenReady = true
+                playWhenReady = autoStart
                 repeatMode = if (loopVideo) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
                 videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT
                 setSeekParameters(SeekParameters.EXACT)
@@ -148,6 +167,9 @@ fun VideoPlayerView(
                 val uri = Uri.fromFile(file)
                 val mediaItem = MediaItem.fromUri(uri)
                 setMediaItem(mediaItem)
+                if (resumeMs > 0L) {
+                    seekTo(resumeMs)
+                }
                 prepare()
 
                 addListener(object : Player.Listener {
@@ -202,19 +224,52 @@ fun VideoPlayerView(
         }
     }
 
+    // Keep ExoPlayer loop mode synced if toggled while playing
+    LaunchedEffect(loopVideo, exoPlayer) {
+        exoPlayer?.repeatMode = if (loopVideo) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+    }
+
     // Pause when app goes to background
     val lifecycleOwner = LocalLifecycleOwner.current
+    val latestUseBrowser by rememberUpdatedState(effectiveUseBrowser)
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) {
-                isPlaybackActive = false
-                exoPlayer?.pause()
+            when (event) {
+                Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> {
+                    isPlaybackActive = false
+                    exoPlayer?.pause()
+                    if (latestUseBrowser) {
+                        browserController.onLifecyclePause()
+                    }
+                }
+                Lifecycle.Event.ON_RESUME -> {
+                    if (latestUseBrowser) {
+                        browserController.onLifecycleResume()
+                    }
+                }
+                else -> {}
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
         }
+    }
+
+    fun switchPlayerEngine() {
+        val currentMs = if (effectiveUseBrowser) {
+            browserController.currentPositionMs
+        } else {
+            exoPlayer?.currentPosition?.coerceAtLeast(0L) ?: 0L
+        }
+        pendingResumePositionMs = currentMs
+        pendingAutoStart = isPlaybackActive
+        isBuffering = true
+        val switchingToBrowser = !effectiveUseBrowser
+        effectiveUseBrowser = switchingToBrowser
+        onTogglePlayerEngine?.invoke()
+        actionFeedback = (if (switchingToBrowser) Icons.Default.Public else Icons.Default.PlayCircle) to
+            (if (switchingToBrowser) strings.playerEngineBrowser else strings.playerEngineNative)
     }
 
     val backgroundInteraction = remember { MutableInteractionSource() }
@@ -312,6 +367,39 @@ fun VideoPlayerView(
 
                     Spacer(modifier = Modifier.width(8.dp))
 
+                    // Player Engine Switch Button: Native (ExoPlayer) <-> Browser (WebView HTML5)
+                    Surface(
+                        shape = RoundedCornerShape(0.dp),
+                        color = if (effectiveUseBrowser) VaultAccentCyan.copy(alpha = 0.2f) else VaultSurfaceElevated,
+                        border = BorderStroke(1.dp, if (effectiveUseBrowser) VaultAccentCyan else VaultBorder),
+                        modifier = Modifier
+                            .height(38.dp)
+                            .clickable { switchPlayerEngine() }
+                            .testTag("player_engine_toggle_btn")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (effectiveUseBrowser) Icons.Default.Public else Icons.Default.PlayCircle,
+                                contentDescription = if (effectiveUseBrowser) strings.playerEngineBrowser else strings.playerEngineNative,
+                                tint = if (effectiveUseBrowser) VaultAccentCyan else VaultTextPrimary,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Text(
+                                text = if (effectiveUseBrowser) strings.playerEngineBrowserShort else strings.playerEngineNativeShort,
+                                color = if (effectiveUseBrowser) VaultAccentCyan else VaultTextPrimary,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
                     // Loop Video Button (Crisp Rectangular)
                     if (onToggleLoop != null) {
                         Surface(
@@ -358,8 +446,8 @@ fun VideoPlayerView(
             }
 
             // 2. VIDEO VIEWPORT: Bounded strictly between TopBar and BottomBar
-            // AspectRatioFrameLayout.RESIZE_MODE_FIT guarantees large resolutions (e.g. 1950x1200)
-            // scale perfectly within bounds without ever overflowing or hiding under UI controls.
+            val currentPlaybackActiveState = rememberUpdatedState(isPlaybackActive)
+            val currentExoPlayerState = rememberUpdatedState(exoPlayer)
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -368,58 +456,102 @@ fun VideoPlayerView(
                     .pointerInput(Unit) {
                         detectTapGestures(
                             onTap = {
-                                exoPlayer?.let { player ->
-                                    if (isPlaybackActive) {
+                                val playing = currentPlaybackActiveState.value
+                                if (latestUseBrowser) {
+                                    if (playing) {
                                         isPlaybackActive = false
-                                        player.pause()
+                                        browserController.pause()
                                         actionFeedback = Icons.Default.Pause to strings.pause
                                     } else {
                                         isPlaybackActive = true
-                                        player.play()
+                                        browserController.play()
                                         actionFeedback = Icons.Default.PlayArrow to strings.play
+                                    }
+                                } else {
+                                    currentExoPlayerState.value?.let { player ->
+                                        if (playing) {
+                                            isPlaybackActive = false
+                                            player.pause()
+                                            actionFeedback = Icons.Default.Pause to strings.pause
+                                        } else {
+                                            isPlaybackActive = true
+                                            player.play()
+                                            actionFeedback = Icons.Default.PlayArrow to strings.play
+                                        }
                                     }
                                 }
                             },
                             onDoubleTap = { offset ->
                                 val isRight = offset.x > (size.width / 2)
-                                exoPlayer?.let { player ->
-                                    val delta = if (isRight) 10000L else -10000L
-                                    val dur = player.duration.coerceAtLeast(1L)
-                                    val target = (player.currentPosition + delta).coerceIn(0L, dur)
-                                    player.seekTo(target)
+                                val delta = if (isRight) 10000L else -10000L
+                                if (latestUseBrowser) {
+                                    val dur = browserController.durationMs.coerceAtLeast(1L)
+                                    val target = (browserController.currentPositionMs + delta).coerceIn(0L, dur)
+                                    browserController.seekTo(target)
                                     actionFeedback = (if (isRight) Icons.Default.Forward10 else Icons.Default.Replay10) to (if (isRight) "+10s" else "-10s")
+                                } else {
+                                    currentExoPlayerState.value?.let { player ->
+                                        val dur = player.duration.coerceAtLeast(1L)
+                                        val target = (player.currentPosition + delta).coerceIn(0L, dur)
+                                        player.seekTo(target)
+                                        actionFeedback = (if (isRight) Icons.Default.Forward10 else Icons.Default.Replay10) to (if (isRight) "+10s" else "-10s")
+                                    }
                                 }
                             }
                         )
                     },
                 contentAlignment = Alignment.Center
             ) {
-                // ExoPlayer View (SurfaceView direct HWC rendering; isolated from timeline recompositions)
-                AndroidView(
-                    factory = { ctx ->
-                        PlayerView(ctx).apply {
-                            layoutParams = ViewGroup.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.MATCH_PARENT
-                            )
-                            useController = false
-                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                            setKeepContentOnPlayerReset(true)
-                            keepScreenOn = isPlaybackActive
-                            this.player = exoPlayer
-                        }
-                    },
-                    update = { view ->
-                        if (view.player !== exoPlayer) {
-                            view.player = exoPlayer
-                        }
-                        if (view.keepScreenOn != isPlaybackActive) {
-                            view.keepScreenOn = isPlaybackActive
-                        }
-                        view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
+                if (effectiveUseBrowser) {
+                    // Browser Mode: Chromium HTML5 <video> engine with byte-range streaming & 0.25x–3.0x speed
+                    BrowserVideoPlayer(
+                        mediaId = media.id,
+                        mediaPath = media.internalPath,
+                        speed = speed,
+                        loopVideo = loopVideo,
+                        initialPositionMs = pendingResumePositionMs,
+                        autoStart = pendingAutoStart,
+                        keepScreenOn = isPlaybackActive,
+                        controller = browserController,
+                        onBufferingChanged = { buffering -> isBuffering = buffering },
+                        onIsPlayingChanged = { playing -> isPlaybackActive = playing },
+                        onEnded = {
+                            isBuffering = false
+                            isPlaybackActive = false
+                            if (autoPlayNext && !loopVideo) {
+                                onNext()
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    // Native Mode: ExoPlayer View (SurfaceView direct HWC rendering; isolated from timeline recompositions)
+                    AndroidView(
+                        factory = { ctx ->
+                            PlayerView(ctx).apply {
+                                layoutParams = ViewGroup.LayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                    ViewGroup.LayoutParams.MATCH_PARENT
+                                )
+                                useController = false
+                                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                                setKeepContentOnPlayerReset(true)
+                                keepScreenOn = isPlaybackActive
+                                this.player = exoPlayer
+                            }
+                        },
+                        update = { view ->
+                            if (view.player !== exoPlayer) {
+                                view.player = exoPlayer
+                            }
+                            if (view.keepScreenOn != isPlaybackActive) {
+                                view.keepScreenOn = isPlaybackActive
+                            }
+                            view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
 
                 // Buffering indicator (shown during loading or re-buffering)
                 if (isBuffering) {
@@ -490,9 +622,11 @@ fun VideoPlayerView(
                         .padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    // Isolated Timeline + Seekbar so 100ms progress ticks never recompose VideoPlayerView / PlayerView
+                    // Isolated Timeline + Seekbar so 100ms progress ticks never recompose VideoPlayerView / PlayerView / WebView
                     PlayerTimelineSection(
+                        useBrowserPlayer = effectiveUseBrowser,
                         exoPlayer = exoPlayer,
+                        browserController = browserController,
                         speed = speed,
                         isPlaybackActive = isPlaybackActive,
                         onShowSpeedDialog = { showSpeedDialog = true }
@@ -537,13 +671,23 @@ fun VideoPlayerView(
                                 .weight(1.3f)
                                 .height(46.dp)
                                 .clickable {
-                                    exoPlayer?.let { player ->
+                                    if (effectiveUseBrowser) {
                                         if (isPlaybackActive) {
                                             isPlaybackActive = false
-                                            player.pause()
+                                            browserController.pause()
                                         } else {
                                             isPlaybackActive = true
-                                            player.play()
+                                            browserController.play()
+                                        }
+                                    } else {
+                                        exoPlayer?.let { player ->
+                                            if (isPlaybackActive) {
+                                                isPlaybackActive = false
+                                                player.pause()
+                                            } else {
+                                                isPlaybackActive = true
+                                                player.play()
+                                            }
                                         }
                                     }
                                 }
@@ -682,23 +826,28 @@ fun VideoPlayerView(
 
 /**
  * Isolated timeline & seekbar composable that owns position polling state (`currentPos`, `duration`).
- * Keeping this in its own composable scope prevents 10Hz progress ticks from recomposing the parent
- * [VideoPlayerView] or [AndroidView] (`SurfaceView`), eliminating UI-vs-HWC composition jitter on 120Hz displays.
+ * Supports both Native (ExoPlayer) and Browser (WebView HTML5) controllers while keeping 10Hz
+ * progress ticks out of the parent [VideoPlayerView] scope.
  */
 @Composable
 private fun PlayerTimelineSection(
+    useBrowserPlayer: Boolean,
     exoPlayer: ExoPlayer?,
+    browserController: BrowserVideoController,
     speed: Float,
     isPlaybackActive: Boolean,
     onShowSpeedDialog: () -> Unit
 ) {
-    var currentPos by remember(exoPlayer) { mutableLongStateOf(0L) }
-    var duration by remember(exoPlayer) { mutableLongStateOf(0L) }
-    var isUserSeeking by remember(exoPlayer) { mutableStateOf(false) }
-    var seekSliderPos by remember(exoPlayer) { mutableFloatStateOf(0f) }
+    var currentPos by remember(useBrowserPlayer, exoPlayer) { mutableLongStateOf(0L) }
+    var duration by remember(useBrowserPlayer, exoPlayer) { mutableLongStateOf(0L) }
+    var isUserSeeking by remember(useBrowserPlayer, exoPlayer) { mutableStateOf(false) }
+    var seekSliderPos by remember(useBrowserPlayer, exoPlayer) { mutableFloatStateOf(0f) }
 
-    // Update immediately on seek discontinuities or ready transitions
-    DisposableEffect(exoPlayer) {
+    // Update immediately on ExoPlayer seek discontinuities or ready transitions
+    DisposableEffect(useBrowserPlayer, exoPlayer) {
+        if (useBrowserPlayer) {
+            return@DisposableEffect onDispose {}
+        }
         val player = exoPlayer ?: return@DisposableEffect onDispose {}
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -727,14 +876,22 @@ private fun PlayerTimelineSection(
         }
     }
 
-    LaunchedEffect(isPlaybackActive, exoPlayer) {
+    LaunchedEffect(isPlaybackActive, useBrowserPlayer, exoPlayer) {
         while (isActive) {
-            exoPlayer?.let { player ->
-                if (!isUserSeeking) {
-                    currentPos = player.currentPosition.coerceAtLeast(0L)
-                    val dur = player.duration.coerceAtLeast(0L)
+            if (!isUserSeeking) {
+                if (useBrowserPlayer) {
+                    currentPos = browserController.currentPositionMs.coerceAtLeast(0L)
+                    val dur = browserController.durationMs.coerceAtLeast(0L)
                     if (dur > 0L) {
                         duration = dur
+                    }
+                } else {
+                    exoPlayer?.let { player ->
+                        currentPos = player.currentPosition.coerceAtLeast(0L)
+                        val dur = player.duration.coerceAtLeast(0L)
+                        if (dur > 0L) {
+                            duration = dur
+                        }
                     }
                 }
             }
@@ -801,8 +958,13 @@ private fun PlayerTimelineSection(
         },
         onValueChangeFinished = {
             isUserSeeking = false
-            exoPlayer?.seekTo(seekSliderPos.toLong())
-            currentPos = seekSliderPos.toLong()
+            val targetMs = seekSliderPos.toLong()
+            if (useBrowserPlayer) {
+                browserController.seekTo(targetMs)
+            } else {
+                exoPlayer?.seekTo(targetMs)
+            }
+            currentPos = targetMs
         },
         valueRange = 0f..duration.toFloat().coerceAtLeast(1f),
         colors = SliderDefaults.colors(

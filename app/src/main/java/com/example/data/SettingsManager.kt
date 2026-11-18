@@ -61,6 +61,11 @@ class SettingsManager(private val context: Context) {
     )
     val defaultPlaybackSpeed: StateFlow<Float> = _defaultPlaybackSpeed.asStateFlow()
 
+    private val _useBrowserPlayer = MutableStateFlow(
+        prefs.getBoolean(KEY_USE_BROWSER_PLAYER, false)
+    )
+    val useBrowserPlayer: StateFlow<Boolean> = _useBrowserPlayer.asStateFlow()
+
     // NEW APPEARANCE & GALLERY SETTINGS
     private val _gridColumnCount = MutableStateFlow(
         prefs.getInt(KEY_GRID_COLUMNS, 3).coerceIn(2, 4)
@@ -158,6 +163,11 @@ class SettingsManager(private val context: Context) {
         _defaultPlaybackSpeed.value = speed
     }
 
+    fun setUseBrowserPlayer(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_USE_BROWSER_PLAYER, enabled).apply()
+        _useBrowserPlayer.value = enabled
+    }
+
     fun setGridColumnCount(count: Int) {
         val safeCount = count.coerceIn(2, 4)
         prefs.edit().putInt(KEY_GRID_COLUMNS, safeCount).apply()
@@ -208,6 +218,7 @@ class SettingsManager(private val context: Context) {
         private const val KEY_SORT_ORDER = "key_sort_order"
         private const val KEY_PLAY_INTRO_ON_LAUNCH = "key_play_intro_on_launch"
         private const val KEY_GALLERY_BROWSE_MODE = "key_gallery_browse_mode"
+        private const val KEY_USE_BROWSER_PLAYER = "key_use_browser_player"
 
         @Volatile
         private var INSTANCE: SettingsManager? = null

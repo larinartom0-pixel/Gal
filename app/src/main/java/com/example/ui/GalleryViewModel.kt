@@ -59,6 +59,7 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     val sortOrder: StateFlow<MediaSortOrder> = settingsManager.sortOrder
     val playIntroOnLaunch: StateFlow<Boolean> = settingsManager.playIntroOnLaunch
     val isGalleryBrowseMode: StateFlow<Boolean> = settingsManager.isGalleryBrowseMode
+    val useBrowserPlayer: StateFlow<Boolean> = settingsManager.useBrowserPlayer
 
     fun setLanguage(language: com.example.data.AppLanguage) {
         settingsManager.setLanguage(language)
@@ -70,6 +71,8 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         settingsManager.setDefaultPlaybackSpeed(speed)
         _playbackSpeed.value = speed
     }
+    fun setUseBrowserPlayer(enabled: Boolean) = settingsManager.setUseBrowserPlayer(enabled)
+    fun toggleBrowserPlayer() = settingsManager.setUseBrowserPlayer(!settingsManager.useBrowserPlayer.value)
     fun setGridColumnCount(count: Int) = settingsManager.setGridColumnCount(count)
     fun setShowMediaBadges(enabled: Boolean) = settingsManager.setShowMediaBadges(enabled)
     fun setSortOrder(order: MediaSortOrder) = settingsManager.setSortOrder(order)

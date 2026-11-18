@@ -121,6 +121,12 @@ interface AppStrings {
     val speedSelectTitle: String
     val resetSpeed: String
     val reversePreparing: String
+    val playerEngineNative: String
+    val playerEngineBrowser: String
+    val playerEngineNativeShort: String
+    val playerEngineBrowserShort: String
+    val useBrowserPlayerSetting: String
+    val useBrowserPlayerSettingDesc: String
 
     // Photo Detail
     val badgePhoto: String
@@ -375,6 +381,12 @@ object EnglishStrings : AppStrings {
     override val speedSelectTitle = "Playback Speed"
     override val resetSpeed = "Reset (1.0x)"
     override val reversePreparing = "Preparing reverse..."
+    override val playerEngineNative = "Native (ExoPlayer)"
+    override val playerEngineBrowser = "Browser (WebView)"
+    override val playerEngineNativeShort = "NATIVE"
+    override val playerEngineBrowserShort = "WEB"
+    override val useBrowserPlayerSetting = "Browser Video Player"
+    override val useBrowserPlayerSettingDesc = "Use built-in Chromium HTML5 engine instead of ExoPlayer"
 
     override val badgePhoto = "PHOTO"
     override val photoZoomHint = "Double tap to zoom • Pinch to scale"
@@ -624,6 +636,12 @@ object UkrainianStrings : AppStrings {
     override val speedSelectTitle = "Швидкість відтворення"
     override val resetSpeed = "Скинути (1.0x)"
     override val reversePreparing = "Підготовка реверсу..."
+    override val playerEngineNative = "Нативний (ExoPlayer)"
+    override val playerEngineBrowser = "Браузерний (WebView)"
+    override val playerEngineNativeShort = "НАТИВ"
+    override val playerEngineBrowserShort = "БРАУЗ"
+    override val useBrowserPlayerSetting = "Браузерний відеоплеєр"
+    override val useBrowserPlayerSettingDesc = "Відтворювати відео через вбудований браузерний рушій HTML5 замість ExoPlayer"
 
     override val badgePhoto = "ФОТО"
     override val photoZoomHint = "Подвійний дотик для зуму • Масштабуйте жестом"
@@ -873,6 +891,12 @@ object RussianStrings : AppStrings {
     override val speedSelectTitle = "Скорость воспроизведения"
     override val resetSpeed = "Сбросить (1.0x)"
     override val reversePreparing = "Подготовка реверса..."
+    override val playerEngineNative = "Нативный (ExoPlayer)"
+    override val playerEngineBrowser = "Браузерный (WebView)"
+    override val playerEngineNativeShort = "НАТИВ"
+    override val playerEngineBrowserShort = "БРАУЗ"
+    override val useBrowserPlayerSetting = "Браузерный видеоплеер"
+    override val useBrowserPlayerSettingDesc = "Воспроизводить видео через встроенный браузерный движок HTML5 вместо ExoPlayer"
 
     override val badgePhoto = "ФОТО"
     override val photoZoomHint = "Двойной тап для зума • Масштабируйте жестом"

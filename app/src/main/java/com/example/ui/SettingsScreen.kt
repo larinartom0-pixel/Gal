@@ -60,6 +60,7 @@ fun SettingsScreen(
     // Extended settings flows
     val autoPlayNext by viewModel.autoPlayNext.collectAsStateWithLifecycle()
     val loopVideo by viewModel.loopVideo.collectAsStateWithLifecycle()
+    val useBrowserPlayer by viewModel.useBrowserPlayer.collectAsStateWithLifecycle()
     val defaultSpeed by viewModel.defaultPlaybackSpeed.collectAsStateWithLifecycle()
     val gridColumns by viewModel.gridColumnCount.collectAsStateWithLifecycle()
     val showMediaBadges by viewModel.showMediaBadges.collectAsStateWithLifecycle()
@@ -332,6 +333,38 @@ fun SettingsScreen(
                                 checkedTrackColor = VaultPrimary,
                                 uncheckedTrackColor = VaultSurface
                             )
+                        )
+                    }
+
+                    HorizontalDivider(color = VaultBorderSubtle)
+
+                    // Browser Video Player Mode Switch (WebView HTML5 vs Native ExoPlayer)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = strings.useBrowserPlayerSetting,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = VaultTextPrimary
+                            )
+                            Text(
+                                text = strings.useBrowserPlayerSettingDesc,
+                                fontSize = 11.sp,
+                                color = VaultTextSecondary
+                            )
+                        }
+                        Switch(
+                            checked = useBrowserPlayer,
+                            onCheckedChange = { viewModel.setUseBrowserPlayer(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = VaultAccentCyan,
+                                checkedTrackColor = VaultPrimary,
+                                uncheckedTrackColor = VaultSurface
+                            ),
+                            modifier = Modifier.testTag("settings_browser_player_switch")
                         )
                     }
 

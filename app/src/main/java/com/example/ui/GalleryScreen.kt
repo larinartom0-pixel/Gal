@@ -110,6 +110,7 @@ fun GalleryScreen(
     val playbackSpeed by viewModel.playbackSpeed.collectAsStateWithLifecycle()
     val autoPlayNext by viewModel.autoPlayNext.collectAsStateWithLifecycle()
     val loopVideo by viewModel.loopVideo.collectAsStateWithLifecycle()
+    val useBrowserPlayer by viewModel.useBrowserPlayer.collectAsStateWithLifecycle()
     val gridColumns by viewModel.gridColumnCount.collectAsStateWithLifecycle()
     val showMediaBadges by viewModel.showMediaBadges.collectAsStateWithLifecycle()
     val sortOrder by viewModel.sortOrder.collectAsStateWithLifecycle()
@@ -1439,6 +1440,8 @@ fun GalleryScreen(
                     totalCount = videos.size,
                     autoPlayNext = autoPlayNext,
                     loopVideo = loopVideo,
+                    useBrowserPlayer = useBrowserPlayer,
+                    onTogglePlayerEngine = { viewModel.toggleBrowserPlayer() },
                     onSpeedChange = { viewModel.setPlaybackSpeed(it) },
                     onShuffleToggle = { viewModel.toggleShuffle() },
                     onNext = { viewModel.nextVideo() },
