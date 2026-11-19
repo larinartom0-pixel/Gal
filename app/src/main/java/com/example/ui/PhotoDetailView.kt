@@ -1,14 +1,13 @@
 package com.example.ui
 
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -17,13 +16,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -40,20 +39,17 @@ fun PhotoDetailView(
     media: HiddenMedia,
     onNext: () -> Unit,
     onPrev: () -> Unit,
-    onRestore: () -> Unit,
     onDelete: () -> Unit,
     onClose: () -> Unit,
-    modifier: Modifier = Modifier,
-    embeddedInTab: Boolean = false
+    modifier: Modifier = Modifier
 ) {
     val strings = LocalAppStrings.current
-    var scale by remember { mutableStateOf(1f) }
-    var offsetX by remember { mutableStateOf(0f) }
-    var offsetY by remember { mutableStateOf(0f) }
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offsetX by remember { mutableFloatStateOf(0f) }
+    var offsetY by remember { mutableFloatStateOf(0f) }
     var showControls by remember { mutableStateOf(true) }
     val backgroundInteractionSource = remember { MutableInteractionSource() }
 
-    // Reset zoom on file shift (Next/Prev)
     LaunchedEffect(media.id) {
         scale = 1f
         offsetX = 0f
@@ -67,17 +63,14 @@ fun PhotoDetailView(
             .clickable(
                 interactionSource = backgroundInteractionSource,
                 indication = null
-            ) { /* Intercept background taps to prevent falling through to list underneath */ }
+            ) {}
     ) {
-        // Main Photo Content with Double-Tap, Single-Tap and Multi-Touch Support (Zoom/Pinch and Pan)
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .pointerInput(Unit) {
                     detectTapGestures(
-                        onTap = {
-                            showControls = !showControls
-                        },
+                        onTap = { showControls = !showControls },
                         onDoubleTap = {
                             if (scale > 1f) {
                                 scale = 1f
@@ -121,7 +114,7 @@ fun PhotoDetailView(
             )
         }
 
-        // Overlay Navigation Arrows
+        // Overlay Navigation Arrows (Sharp Vault Style)
         AnimatedVisibility(
             visible = showControls && scale == 1f,
             enter = fadeIn(),
@@ -131,44 +124,48 @@ fun PhotoDetailView(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
+                    .padding(horizontal = 14.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(
-                    onClick = onPrev,
+                Surface(
+                    shape = RoundedCornerShape(0.dp),
+                    color = VaultSurfaceElevated.copy(alpha = 0.85f),
+                    border = BorderStroke(1.dp, VaultBorder),
                     modifier = Modifier
                         .size(48.dp)
-                        .clip(CircleShape)
-                        .background(VaultSurfaceElevated.copy(alpha = 0.8f))
-                        .border(1.dp, VaultBorderSubtle, CircleShape)
+                        .clickable(onClick = onPrev)
                 ) {
-                    Icon(
-                        Icons.Default.ChevronLeft,
-                        contentDescription = strings.prev,
-                        tint = VaultTextPrimary,
-                        modifier = Modifier.size(28.dp)
-                    )
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.ChevronLeft,
+                            contentDescription = strings.prev,
+                            tint = VaultTextPrimary,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
                 }
-                IconButton(
-                    onClick = onNext,
+                Surface(
+                    shape = RoundedCornerShape(0.dp),
+                    color = VaultSurfaceElevated.copy(alpha = 0.85f),
+                    border = BorderStroke(1.dp, VaultBorder),
                     modifier = Modifier
                         .size(48.dp)
-                        .clip(CircleShape)
-                        .background(VaultSurfaceElevated.copy(alpha = 0.8f))
-                        .border(1.dp, VaultBorderSubtle, CircleShape)
+                        .clickable(onClick = onNext)
                 ) {
-                    Icon(
-                        Icons.Default.ChevronRight,
-                        contentDescription = strings.next,
-                        tint = VaultTextPrimary,
-                        modifier = Modifier.size(28.dp)
-                    )
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = strings.next,
+                            tint = VaultTextPrimary,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
                 }
             }
         }
 
-        // Modern Frosted Header Controls Bar
+        // Top Bar
         AnimatedVisibility(
             visible = showControls,
             enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
@@ -182,79 +179,56 @@ fun PhotoDetailView(
                         Brush.verticalGradient(
                             colors = listOf(
                                 VaultBackground.copy(alpha = 0.95f),
-                                VaultBackground.copy(alpha = 0.6f),
+                                VaultBackground.copy(alpha = 0.65f),
                                 Color.Transparent
                             )
                         )
                     )
-                    .then(if (!embeddedInTab) Modifier.statusBarsPadding() else Modifier)
-                    .padding(horizontal = 16.dp, vertical = if (embeddedInTab) 6.dp else 12.dp)
+                    .statusBarsPadding()
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    IconButton(
-                        onClick = onClose,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(VaultSurfaceElevated.copy(alpha = 0.85f))
-                            .border(1.dp, VaultBorderSubtle, CircleShape)
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = strings.back, tint = VaultTextPrimary)
-                    }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1.0f)) {
+                    PlayerTopIconButton(
+                        icon = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = strings.back,
+                        onClick = onClose
+                    )
+
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = media.originalFilename,
                             color = VaultTextPrimary,
-                            fontSize = 15.sp,
+                            fontSize = 14.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             fontWeight = FontWeight.Bold
                         )
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Surface(
-                                shape = RoundedCornerShape(0.dp),
-                                color = VaultPrimary.copy(alpha = 0.2f),
-                                border = androidx.compose.foundation.BorderStroke(0.5.dp, VaultPrimary.copy(alpha = 0.4f))
-                            ) {
-                                Text(
-                                    text = strings.badgePhoto,
-                                    color = VaultPrimaryLight,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                                )
-                            }
-                            Text(
-                                text = "${(media.size / 1024)} KB",
-                                color = VaultTextSecondary,
-                                fontSize = 12.sp
-                            )
-                        }
+                        Text(
+                            text = "${strings.badgePhoto} • ${media.size / 1024} KB",
+                            color = VaultTextSecondary,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1
+                        )
                     }
-                    
-                    // Delete Button
-                    IconButton(
+
+                    PlayerTopIconButton(
+                        icon = Icons.Default.Delete,
+                        contentDescription = strings.delete,
                         onClick = onDelete,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(VaultErrorContainer)
-                            .border(1.dp, VaultError.copy(alpha = 0.4f), CircleShape)
-                    ) {
-                        Icon(Icons.Default.Delete, contentDescription = strings.delete, tint = VaultError)
-                    }
+                        containerColor = VaultErrorContainer,
+                        borderColor = VaultError.copy(alpha = 0.6f),
+                        tint = VaultError
+                    )
                 }
             }
         }
 
-        // Hint bottom pill banner
+        // Bottom Zoom Hint
         AnimatedVisibility(
             visible = showControls,
             enter = fadeIn() + slideInVertically(initialOffsetY = { it }),
@@ -267,7 +241,7 @@ fun PhotoDetailView(
             Surface(
                 shape = RoundedCornerShape(0.dp),
                 color = VaultSurfaceElevated.copy(alpha = 0.85f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, VaultBorderSubtle)
+                border = BorderStroke(1.dp, VaultBorderSubtle)
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
@@ -291,4 +265,3 @@ fun PhotoDetailView(
         }
     }
 }
-

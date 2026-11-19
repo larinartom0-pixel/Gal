@@ -116,11 +116,8 @@ interface AppStrings {
     val prev: String
     val next: String
     val speed: String
-    val reverseSpeed: String
-    val normalSpeed: String
     val speedSelectTitle: String
     val resetSpeed: String
-    val reversePreparing: String
     val playerEngineNative: String
     val playerEngineBrowser: String
     val playerEngineNativeShort: String
@@ -366,7 +363,7 @@ object EnglishStrings : AppStrings {
     override val allFilesAccessBannerDesc = "Required to browse and save videos from any chosen folders."
     override val settingsOpenError = "Failed to open settings."
 
-    override val playerLoading = "STUDIO LOADING..."
+    override val playerLoading = "Loading..."
     override val badgeVideo = "VIDEO"
     override val shuffleOff = "Shuffle: Off"
     override val shuffleRandom = "Shuffle: Full Random"
@@ -376,11 +373,8 @@ object EnglishStrings : AppStrings {
     override val prev = "Previous"
     override val next = "Next"
     override val speed = "Speed"
-    override val reverseSpeed = "Reverse"
-    override val normalSpeed = "Forward"
     override val speedSelectTitle = "Playback Speed"
     override val resetSpeed = "Reset (1.0x)"
-    override val reversePreparing = "Preparing reverse..."
     override val playerEngineNative = "Native (ExoPlayer)"
     override val playerEngineBrowser = "Browser (WebView)"
     override val playerEngineNativeShort = "NATIVE"
@@ -621,7 +615,7 @@ object UkrainianStrings : AppStrings {
     override val allFilesAccessBannerDesc = "Потрібно для перегляду та збереження відео з будь-яких вибраних папок."
     override val settingsOpenError = "Помилка відкриття налаштувань."
 
-    override val playerLoading = "СТУДІЙНЕ ЗАВАНТАЖЕННЯ..."
+    override val playerLoading = "Завантаження..."
     override val badgeVideo = "ВІДЕО"
     override val shuffleOff = "Випадковий порядок: Вимк"
     override val shuffleRandom = "Випадковий порядок: Повний"
@@ -631,11 +625,8 @@ object UkrainianStrings : AppStrings {
     override val prev = "Попереднє"
     override val next = "Наступне"
     override val speed = "Швидкість"
-    override val reverseSpeed = "Реверс"
-    override val normalSpeed = "Вперед"
     override val speedSelectTitle = "Швидкість відтворення"
     override val resetSpeed = "Скинути (1.0x)"
-    override val reversePreparing = "Підготовка реверсу..."
     override val playerEngineNative = "Нативний (ExoPlayer)"
     override val playerEngineBrowser = "Браузерний (WebView)"
     override val playerEngineNativeShort = "НАТИВ"
@@ -876,7 +867,7 @@ object RussianStrings : AppStrings {
     override val allFilesAccessBannerDesc = "Требуется для просмотра и сохранения видео из любых выбранных папок."
     override val settingsOpenError = "Ошибка открытия настроек."
 
-    override val playerLoading = "СТУДИЙНАЯ ЗАГРУЗКА..."
+    override val playerLoading = "Загрузка..."
     override val badgeVideo = "ВИДЕО"
     override val shuffleOff = "Случайный порядок: Выкл"
     override val shuffleRandom = "Случайный порядок: Полный"
@@ -886,11 +877,8 @@ object RussianStrings : AppStrings {
     override val prev = "Предыдущее"
     override val next = "Следующее"
     override val speed = "Скорость"
-    override val reverseSpeed = "Реверс"
-    override val normalSpeed = "Вперед"
     override val speedSelectTitle = "Скорость воспроизведения"
     override val resetSpeed = "Сбросить (1.0x)"
-    override val reversePreparing = "Подготовка реверса..."
     override val playerEngineNative = "Нативный (ExoPlayer)"
     override val playerEngineBrowser = "Браузерный (WebView)"
     override val playerEngineNativeShort = "НАТИВ"

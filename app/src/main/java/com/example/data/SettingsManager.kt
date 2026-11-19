@@ -237,7 +237,7 @@ class SettingsManager(private val context: Context) {
             }
             val systemLang = try {
                 val locales = android.content.res.Resources.getSystem().configuration.locales
-                if (locales != null && !locales.isEmpty) {
+                if (!locales.isEmpty) {
                     locales[0].language.lowercase().trim()
                 } else {
                     java.util.Locale.getDefault().language.lowercase().trim()
