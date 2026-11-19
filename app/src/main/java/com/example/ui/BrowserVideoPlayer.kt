@@ -122,19 +122,21 @@ fun BrowserVideoPlayer(
     val latestOnUnsupportedCodec = rememberUpdatedState(onUnsupportedCodec)
 
     val httpServer = remember {
-        LocalVideoHttpServer { videoUrl, queryParams ->
-            val reqSpeed = queryParams["spd"]?.toFloatOrNull() ?: latestSpeed.value
-            val reqLoop = queryParams["lp"]?.toBooleanStrictOrNull() ?: latestLoop.value
-            val reqSeekMs = queryParams["seek"]?.toLongOrNull() ?: latestInitialPos.value
-            val reqAuto = queryParams["auto"]?.toBooleanStrictOrNull() ?: latestAutoStart.value
-            buildBrowserPlayerHtml(
-                videoUrl = videoUrl,
-                initialSpeed = reqSpeed.coerceIn(0.25f, 3.0f),
-                initialLoop = reqLoop,
-                initialSeekMs = reqSeekMs.coerceAtLeast(0L),
-                autoStart = reqAuto
-            )
-        }
+        runCatching {
+            LocalVideoHttpServer { videoUrl, queryParams ->
+                val reqSpeed = queryParams["spd"]?.toFloatOrNull() ?: latestSpeed.value
+                val reqLoop = queryParams["lp"]?.toBooleanStrictOrNull() ?: latestLoop.value
+                val reqSeekMs = queryParams["seek"]?.toLongOrNull() ?: latestInitialPos.value
+                val reqAuto = queryParams["auto"]?.toBooleanStrictOrNull() ?: latestAutoStart.value
+                buildBrowserPlayerHtml(
+                    videoUrl = videoUrl,
+                    initialSpeed = reqSpeed.coerceIn(0.25f, 3.0f),
+                    initialLoop = reqLoop,
+                    initialSeekMs = reqSeekMs.coerceAtLeast(0L),
+                    autoStart = reqAuto
+                )
+            }
+        }.getOrNull()
     }
 
     val bridge = remember(controller) {
@@ -178,13 +180,19 @@ fun BrowserVideoPlayer(
     }
 
     // Update current media file and load loopback HTTP player URL whenever the media item changes
-    LaunchedEffect(mediaId, mediaPath) {
-        httpServer.setActiveFile(File(mediaPath))
+    LaunchedEffect(mediaId, mediaPath, httpServer) {
+        val server = httpServer
+        if (server == null) {
+            onBufferingChanged(false)
+            latestOnUnsupportedCodec.value()
+            return@LaunchedEffect
+        }
+        server.setActiveFile(File(mediaPath))
         controller.currentPositionMs = latestInitialPos.value
         controller.durationMs = 0L
         onBufferingChanged(true)
         controller.webView?.loadUrl(
-            httpServer.buildPlayerUrl(
+            server.buildPlayerUrl(
                 mediaId = mediaId,
                 speed = latestSpeed.value,
                 loop = latestLoop.value,
@@ -213,7 +221,7 @@ fun BrowserVideoPlayer(
                 wv.destroy()
             }
             controller.webView = null
-            httpServer.close()
+            httpServer?.close()
         }
     }
 
@@ -245,7 +253,7 @@ fun BrowserVideoPlayer(
                 webChromeClient = WebChromeClient()
                 webViewClient = WebViewClient()
 
-                httpServer.setActiveFile(File(mediaPath))
+                httpServer?.setActiveFile(File(mediaPath))
                 this.keepScreenOn = keepScreenOn
                 controller.webView = this
             }
